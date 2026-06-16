@@ -1,0 +1,130 @@
+:root {
+  /* Marca Semantia — gradiente da logo (teal → azul → roxo) */
+  --teal: #4fb3bf;
+  --blue: #5b86d4;
+  --purple: #9277cf;
+  --brand: linear-gradient(115deg, var(--teal) 0%, var(--blue) 50%, var(--purple) 100%);
+
+  /* Neutros */
+  --ink: #1c2230;
+  --ink-soft: #4d5666;
+  --muted: #8a93a4;
+  --line: #e6e9f0;
+  --surface: #ffffff;
+  --bg: #f3f5fa;
+  --bg-2: #eaeef6;
+
+  /* Faixa escura (contraste / "fora do comum") */
+  --night: #161b27;
+  --night-2: #1e2535;
+  --night-line: #2c3447;
+  --on-night: #c7cedd;
+
+  --radius: 22px;
+  --radius-sm: 14px;
+  --shadow-sm: 0 1px 2px rgba(28, 34, 48, 0.04), 0 4px 14px rgba(28, 34, 48, 0.05);
+  --shadow-md: 0 18px 40px rgba(28, 34, 48, 0.1), 0 4px 10px rgba(28, 34, 48, 0.06);
+  --shadow-brand: 0 16px 36px rgba(91, 134, 212, 0.32);
+
+  --body: 'Hanken Grotesk', system-ui, sans-serif;
+  --display: 'Bricolage Grotesque', 'Hanken Grotesk', sans-serif;
+
+  color-scheme: light;
+  color: var(--ink-soft);
+  background: var(--bg);
+  font: 400 16px/1.6 var(--body);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100svh;
+  /* textura sutil de "rede" (nós) ecoando a logo */
+  background-color: var(--bg);
+  background-image: radial-gradient(rgba(91, 134, 212, 0.07) 1px, transparent 1px);
+  background-size: 26px 26px;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--display);
+  color: var(--ink);
+  margin: 0;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+p {
+  margin: 0;
+}
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+.brand-text {
+  background: var(--brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: 16px;
+  top: -56px;
+  z-index: 100;
+  background: var(--ink);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 10px;
+  text-decoration: none;
+  transition: top 0.2s ease;
+}
+.skip-link:focus {
+  top: 16px;
+}
+
+.container {
+  width: 100%;
+  max-width: 1160px;
+  margin: 0 auto;
+  padding-inline: 24px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
