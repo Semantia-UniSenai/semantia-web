@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import MeshShader from './components/MeshShader.vue'
 import ToolCard from './components/ToolCard.vue'
+import ToolModal from './components/ToolModal.vue'
 import { tools, type Tool } from './data/tools'
+
+const activeTool = ref<Tool | null>(null)
+const toast = ref('')
+let toastTimer = 0
 
 let layers: HTMLElement[] = []
 const bases = new Map<HTMLElement, number>()
@@ -84,8 +89,16 @@ function openVLibras() {
   }
   setTimeout(() => document.querySelector<HTMLElement>('[vw-access-button]')?.click(), 700)
 }
+function showToast(msg: string) {
+  toast.value = msg
+  clearTimeout(toastTimer)
+  toastTimer = window.setTimeout(() => (toast.value = ''), 3200)
+}
 function onActivate(tool: Tool) {
-  if (tool.id === 'tradutor') openVLibras()
+  if (tool.open === 'vlibras') return openVLibras()
+  if (tool.status === 'disponivel' && tool.open) return void (activeTool.value = tool)
+  if (tool.status === 'pro') return showToast('Adaptação Semântica é o recurso Pro — em breve. ✨')
+  showToast('Em construção — chega em breve. 🚧')
 }
 </script>
 
@@ -202,6 +215,14 @@ function onActivate(tool: Tool) {
       </p>
     </div>
   </footer>
+
+  <Transition name="modal">
+    <ToolModal v-if="activeTool" :tool="activeTool" @close="activeTool = null" />
+  </Transition>
+
+  <Transition name="toast">
+    <div v-if="toast" class="toast" role="status">{{ toast }}</div>
+  </Transition>
 </template>
 
 <style scoped>
@@ -624,5 +645,38 @@ function onActivate(tool: Tool) {
   .ftr__meta {
     text-align: left;
   }
+}
+
+/* TOAST */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: 70;
+  padding: 13px 22px;
+  border-radius: 14px;
+  background: var(--night);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14.5px;
+  box-shadow: var(--shadow-md);
+}
+.toast-enter-active,
+.toast-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(12px);
+}
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 0.2s ease;
+}
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
 }
 </style>

@@ -1,3 +1,10 @@
+/* Alfabeto manual de Libras (handshapes) — fonte "Libras 2020" (trabalho independente). */
+@font-face {
+  font-family: 'LibrasMao';
+  src: url('/fonts/Libras2020-Regular.ttf') format('truetype');
+  font-display: swap;
+}
+
 :root {
   /* Marca Semantia — gradiente da logo (teal → azul → roxo) */
   --teal: #4fb3bf;
@@ -51,6 +58,37 @@ body {
   background-color: var(--bg);
   background-image: radial-gradient(rgba(91, 134, 212, 0.07) 1px, transparent 1px);
   background-size: 26px 26px;
+}
+
+/* Scrollbar global estilizada — sem setas, thumb arredondado */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #c2cad8 transparent;
+}
+*::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: #c2cad8;
+  border-radius: 999px;
+  border: 3px solid var(--bg);
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #a7b1c2;
+  background-clip: padding-box;
 }
 
 h1,

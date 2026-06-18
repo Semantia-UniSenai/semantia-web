@@ -3,19 +3,16 @@ import type { Tool } from '../data/tools'
 import { statusLabel } from '../data/tools'
 import ToolIcon from './ToolIcon.vue'
 
-const props = defineProps<{ tool: Tool }>()
+defineProps<{ tool: Tool }>()
 const emit = defineEmits<{ activate: [tool: Tool] }>()
-
-const interactive = props.tool.status === 'disponivel'
 </script>
 
 <template>
-  <component
-    :is="interactive ? 'button' : 'div'"
-    :type="interactive ? 'button' : undefined"
+  <button
+    type="button"
     class="tile"
-    :class="[`tile--${tool.status}`, { 'tile--on': interactive }]"
-    @click="interactive && emit('activate', tool)"
+    :class="[`tile--${tool.status}`]"
+    @click="emit('activate', tool)"
   >
     <span class="tile__status">
       <span class="dot" aria-hidden="true"></span>{{ statusLabel[tool.status] }}
@@ -24,14 +21,14 @@ const interactive = props.tool.status === 'disponivel'
     <h3 class="tile__title">{{ tool.title }}</h3>
     <p class="tile__desc">{{ tool.description }}</p>
     <span v-if="tool.source" class="tile__source">{{ tool.source }}</span>
-    <span v-if="interactive" class="tile__go" aria-hidden="true">
+    <span v-if="tool.status === 'disponivel'" class="tile__go" aria-hidden="true">
       Abrir
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
            stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M5 12h14" /><path d="M13 6l6 6-6 6" />
       </svg>
     </span>
-  </component>
+  </button>
 </template>
 
 <style scoped>
@@ -50,7 +47,7 @@ const interactive = props.tool.status === 'disponivel'
   box-shadow: var(--shadow-sm);
   font: inherit;
   color: inherit;
-  cursor: default;
+  cursor: pointer;
   transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.22s ease,
     border-color 0.22s ease;
 }
@@ -72,11 +69,9 @@ const interactive = props.tool.status === 'disponivel'
 .tile:hover::before {
   opacity: 1;
 }
-.tile--on {
-  cursor: pointer;
-}
-.tile--on:hover {
-  border-color: transparent;
+.tile--em-construcao,
+.tile--fase-2 {
+  opacity: 0.8;
 }
 
 .tile__status {
@@ -100,6 +95,13 @@ const interactive = props.tool.status === 'disponivel'
   background: #25c08a;
   box-shadow: 0 0 0 4px rgba(37, 192, 138, 0.16);
 }
+.tile--pro .tile__status {
+  color: #b8860b;
+}
+.tile--pro .dot {
+  background: linear-gradient(140deg, #e8b84b, #c8932a);
+  box-shadow: 0 0 0 4px rgba(200, 147, 42, 0.16);
+}
 
 .tile__icon {
   display: grid;
@@ -113,6 +115,10 @@ const interactive = props.tool.status === 'disponivel'
 }
 .tile:hover .tile__icon {
   background: var(--brand);
+  color: #fff;
+}
+.tile--pro .tile__icon {
+  background: linear-gradient(140deg, #f1d486, #d9a83e);
   color: #fff;
 }
 .tile__icon svg {
@@ -145,7 +151,7 @@ const interactive = props.tool.status === 'disponivel'
   font-size: 14px;
   color: var(--blue);
 }
-.tile--on:hover .tile__go svg {
+.tile:hover .tile__go svg {
   transform: translateX(3px);
   transition: transform 0.18s ease;
 }
