@@ -11,8 +11,8 @@ export const faq = [
     a: 'Não. Cada país tem sua própria língua de sinais. A Libras é do Brasil; os Estados Unidos usam a ASL, Portugal a LGP, e assim por diante.',
   },
   {
-    q: 'Toda pessoa surda sabe Libras?',
-    a: 'Não necessariamente. Depende do acesso que a pessoa teve à língua. Muitas pessoas surdas se comunicam por Libras, outras por leitura labial, escrita ou de forma combinada.',
+    q: 'Toda pessoa com deficiência auditiva sabe Libras?',
+    a: 'Não necessariamente. Depende do acesso que a pessoa teve à língua. Muitas pessoas com deficiência auditiva se comunicam por Libras, outras por leitura labial, escrita ou de forma combinada.',
   },
   {
     q: 'Qual a diferença entre tradução literal e adaptação semântica?',
@@ -23,18 +23,18 @@ export const faq = [
     a: 'É soletrar uma palavra letra por letra usando o alfabeto manual. Serve principalmente para nomes próprios e palavras que ainda não têm um sinal específico.',
   },
   {
-    q: 'Como me comunicar com uma pessoa surda sem saber Libras?',
+    q: 'Como me comunicar com uma pessoa com deficiência auditiva sem saber Libras?',
     a: 'Olhe para a pessoa (não para o intérprete), fale com naturalidade, use gestos e expressões, escreva quando precisar e tenha paciência. Ferramentas como o tradutor em Libras desta página também ajudam.',
   },
 ]
 
 export const guia = {
   intro:
-    'Você não precisa ser fluente em Libras para incluir um aluno surdo. Pequenas mudanças de atitude e de método já derrubam boa parte das barreiras.',
+    'Você não precisa ser fluente em Libras para incluir um aluno com deficiência auditiva. Pequenas mudanças de atitude e de método já derrubam boa parte das barreiras.',
   passos: [
     {
       t: 'Garanta o acesso visual',
-      d: 'Fale de frente, com boa iluminação no rosto. O aluno surdo precisa ver você (e o intérprete, se houver) o tempo todo.',
+      d: 'Fale de frente, com boa iluminação no rosto. O aluno com deficiência auditiva precisa ver você (e o intérprete, se houver) o tempo todo.',
     },
     {
       t: 'Use apoio visual sempre',
@@ -50,7 +50,7 @@ export const guia = {
     },
     {
       t: 'Avalie pelo conteúdo, não pelo português',
-      d: 'O português é segunda língua para muitos surdos. Valorize a compreensão da ideia, não a forma escrita perfeita.',
+      d: 'O português é segunda língua para muitos deficientes auditivos. Valorize a compreensão da ideia, não a forma escrita perfeita.',
     },
     {
       t: 'Aprenda o básico de Libras',
