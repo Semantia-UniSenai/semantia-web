@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# orval spec snapshot (gerado do backend)
+openapi.json
+
+# variáveis de ambiente locais (.env.example é o template versionado)
+.env
