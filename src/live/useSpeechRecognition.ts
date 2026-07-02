@@ -14,6 +14,10 @@ import { onBeforeUnmount, readonly, ref, shallowRef } from 'vue'
  *   `listening` for desejado, religa no evento `end` (auto-restart).
  * - Erros fatais (`not-allowed`, `audio-capture`) desligam e expõem `error`;
  *   `no-speech`/`aborted` são transitórios e só deixam o auto-restart agir.
+ * - `network` é ambíguo: pode ser queda momentânea (transitório) ou um browser
+ *   sem acesso ao serviço de voz — no Brave a API existe mas toda tentativa
+ *   morre com `network`, o que viraria loop infinito mudo. Erros `network`
+ *   consecutivos sem nenhum resultado no meio viram fatais.
  */
 
 // Tipos mínimos da Web Speech API (não existem no lib.dom do TS estável).
@@ -57,6 +61,8 @@ export const FATAL_SPEECH_ERRORS = new Set([
   'audio-capture',
 ])
 
+export const NETWORK_ERROR_LIMIT = 2
+
 export interface UseSpeechRecognitionOptions {
   lang?: string
   onPartial: (text: string) => void
@@ -70,8 +76,10 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
   const listening = ref(false)
   const error = ref<string | null>(null)
   const recognition = shallowRef<SpeechRecognitionLike | null>(null)
+  let consecutiveNetworkErrors = 0
 
   function handleResult(event: SpeechRecognitionEventLike) {
+    consecutiveNetworkErrors = 0
     // Reconstrói a frase corrente a partir dos resultados ainda não finais e
     // despacha cada resultado final exatamente uma vez.
     let interim = ''
@@ -92,6 +100,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
   function start() {
     if (!Ctor || listening.value) return
     error.value = null
+    consecutiveNetworkErrors = 0
 
     const rec = new Ctor()
     rec.lang = options.lang ?? 'pt-BR'
@@ -99,12 +108,19 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
     rec.interimResults = true
     rec.onresult = handleResult
     rec.onerror = (e) => {
+      if (e.error === 'network') {
+        consecutiveNetworkErrors += 1
+        if (consecutiveNetworkErrors >= NETWORK_ERROR_LIMIT) {
+          error.value = 'network'
+          stop()
+        }
+        return
+      }
       if (FATAL_SPEECH_ERRORS.has(e.error)) {
         error.value = e.error
         stop()
       }
-      // Erros transitórios (no-speech, aborted, network intermitente) caem no
-      // onend, que religa sozinho.
+      // Erros transitórios (no-speech, aborted) caem no onend, que religa sozinho.
     }
     rec.onend = () => {
       // Auto-restart: o browser para sozinho após silêncio prolongado.

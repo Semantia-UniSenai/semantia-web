@@ -22,6 +22,8 @@ const ERROR_HINTS: Record<string, string> = {
     'O reconhecimento de voz foi bloqueado pelo navegador. Verifique as permissões.',
   'audio-capture': 'Nenhum microfone encontrado. Conecte um microfone e tente de novo.',
   'start-failed': 'Não foi possível iniciar a captura. Recarregue a página e tente de novo.',
+  network:
+    'Sem acesso ao serviço de voz do navegador. No Brave a transcrição não funciona (o serviço é bloqueado) — use Chrome ou Edge.',
 }
 </script>
 

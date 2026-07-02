@@ -219,6 +219,64 @@ describe('useSpeechRecognition', () => {
     expect(api.listening.value).toBe(true)
   })
 
+  it("um 'network' isolado é transitório (deixa o auto-restart agir)", () => {
+    const { api } = mountSpeech()
+    api.start()
+    const rec = lastRec()
+
+    rec.onerror?.({ error: 'network' })
+
+    expect(api.error.value).toBeNull()
+    expect(api.listening.value).toBe(true)
+
+    // browser encerra depois do erro; auto-restart religa
+    rec.onend?.()
+    expect(rec.start).toHaveBeenCalledTimes(2)
+  })
+
+  it("'network' consecutivo sem resultado vira fatal (caso Brave: serviço bloqueado)", () => {
+    const { api } = mountSpeech()
+    api.start()
+    const rec = lastRec()
+
+    rec.onerror?.({ error: 'network' })
+    rec.onend?.()
+    rec.onerror?.({ error: 'network' })
+
+    expect(api.error.value).toBe('network')
+    expect(api.listening.value).toBe(false)
+    expect(rec.stop).toHaveBeenCalled()
+  })
+
+  it("resultado no meio zera a contagem de 'network' (queda momentânea não vira fatal)", () => {
+    const { api, onPartial } = mountSpeech()
+    api.start()
+    const rec = lastRec()
+
+    rec.onerror?.({ error: 'network' })
+    rec.onend?.()
+    rec.onresult?.(resultEvent([{ text: 'voltou a falar' }]))
+    rec.onerror?.({ error: 'network' })
+
+    expect(onPartial).toHaveBeenCalledWith('voltou a falar')
+    expect(api.error.value).toBeNull()
+    expect(api.listening.value).toBe(true)
+  })
+
+  it("start novo zera a contagem de 'network' de sessões anteriores", () => {
+    const { api } = mountSpeech()
+    api.start()
+    lastRec().onerror?.({ error: 'network' })
+    api.stop()
+
+    api.start()
+    const rec2 = lastRec()
+    rec2.onerror?.({ error: 'network' })
+
+    expect(api.error.value).toBeNull()
+    expect(api.listening.value).toBe(true)
+  })
+
   it('unmount do componente para o reconhecimento', () => {
     const { api, wrapper } = mountSpeech()
     api.start()
