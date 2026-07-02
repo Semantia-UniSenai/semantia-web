@@ -410,7 +410,7 @@ function onActivate(tool: Tool) {
   will-change: transform;
 }
 .hero__title {
-  font-size: clamp(40px, 7vw, 82px);
+  font-size: clamp(31px, 7vw, 82px);
   font-weight: 800;
   letter-spacing: -0.03em;
   margin: 24px 0 0;
@@ -673,12 +673,38 @@ function onActivate(tool: Tool) {
   transform: none;
 }
 
-@media (max-width: 560px) {
-  .nav a {
+/* Header: os links de âncora não cabem junto de Entrar + CTA abaixo de ~680px */
+@media (max-width: 680px) {
+  .nav a:not(.nav__login) {
     display: none;
   }
+}
+@media (max-width: 560px) {
   .ftr__meta {
     text-align: left;
+  }
+  .hero__in {
+    padding-block: 64px;
+  }
+}
+/* Telas bem estreitas: compacta brand + botões para caber em 360px sem estourar */
+@media (max-width: 480px) {
+  .hdr__in {
+    padding-inline: 16px;
+  }
+  .brand__name {
+    font-size: 18px;
+  }
+  .nav {
+    gap: 4px;
+  }
+  .nav__login,
+  .nav__cta {
+    padding: 8px 11px;
+    font-size: 13.5px;
+  }
+  .glosa {
+    padding: 20px 16px;
   }
 }
 
@@ -689,6 +715,9 @@ function onActivate(tool: Tool) {
   bottom: 28px;
   transform: translateX(-50%);
   z-index: 70;
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  text-align: center;
   padding: 13px 22px;
   border-radius: 14px;
   background: var(--night);

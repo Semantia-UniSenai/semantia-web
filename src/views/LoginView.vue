@@ -163,4 +163,12 @@ input:focus {
   color: var(--brand);
   font-weight: 700;
 }
+@media (max-width: 400px) {
+  .auth {
+    padding: 24px 14px;
+  }
+  .card {
+    padding: 26px 20px;
+  }
+}
 </style>

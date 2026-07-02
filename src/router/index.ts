@@ -25,6 +25,38 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/AppHomeView.vue'),
     meta: { requiresAuth: true },
   },
+  {
+    path: '/app/turmas',
+    name: 'classes',
+    component: () => import('../views/ClassesView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/app/turmas/:id',
+    name: 'class-detail',
+    component: () => import('../views/ClassDetailView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/app/aula/:id',
+    name: 'live-room',
+    component: () => import('../views/LiveRoomView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    // Link compartilhável de convite para uma aula (token no path).
+    path: '/aula/convite/:token',
+    name: 'session-invite',
+    component: () => import('../views/SessionInviteView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    // Link compartilhável de convite para uma turma (código no path).
+    path: '/turma/convite/:code',
+    name: 'class-invite',
+    component: () => import('../views/ClassInviteView.vue'),
+    meta: { requiresAuth: true },
+  },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 

@@ -5,9 +5,11 @@
  * LIBRAS learning app — auth + gated games (fingerspelling).
  * OpenAPI spec version: 1.0.0
  */
+import type { UserRole } from './userRole';
 
 export interface UserDto {
   id: string;
   name: string;
   email: string;
+  role: UserRole;
 }

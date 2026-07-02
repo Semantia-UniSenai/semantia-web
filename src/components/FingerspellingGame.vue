@@ -262,8 +262,17 @@ onBeforeUnmount(() => {
 }
 .opts {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
+}
+@media (max-width: 420px) {
+  .opts {
+    gap: 8px;
+  }
+  .opt {
+    padding: 14px 0;
+    font-size: 22px;
+  }
 }
 .opt {
   padding: 18px 0;

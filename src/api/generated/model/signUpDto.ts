@@ -5,6 +5,7 @@
  * LIBRAS learning app — auth + gated games (fingerspelling).
  * OpenAPI spec version: 1.0.0
  */
+import type { UserRole } from './userRole';
 
 export interface SignUpDto {
   /** Full display name */
@@ -15,4 +16,6 @@ export interface SignUpDto {
      * @maxLength 72
      */
   password: string;
+  /** Account role. Defaults to ALUNO when omitted. */
+  role?: UserRole;
 }

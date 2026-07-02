@@ -1,9 +1,11 @@
 import { computed, ref } from 'vue'
+import type { UserRole } from '../api/generated/model'
 
 export interface AuthUser {
   id: string
   name: string
   email: string
+  role: UserRole
 }
 
 const TOKEN_KEY = 'semantia.token'
@@ -25,6 +27,7 @@ const user = ref<AuthUser | null>(readUser())
 
 export function useAuth() {
   const isAuthenticated = computed(() => !!token.value)
+  const isProfessor = computed(() => user.value?.role === 'PROFESSOR')
 
   function setSession(newToken: string, newUser: AuthUser) {
     token.value = newToken
@@ -40,7 +43,7 @@ export function useAuth() {
     localStorage.removeItem(USER_KEY)
   }
 
-  return { token, user, isAuthenticated, setSession, logout }
+  return { token, user, isAuthenticated, isProfessor, setSession, logout }
 }
 
 export function getToken(): string | null {

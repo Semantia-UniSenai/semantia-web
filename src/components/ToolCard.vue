@@ -155,4 +155,10 @@ const emit = defineEmits<{ activate: [tool: Tool] }>()
   transform: translateX(3px);
   transition: transform 0.18s ease;
 }
+@media (max-width: 380px) {
+  .tile {
+    padding: 26px 18px 22px;
+    min-height: 210px;
+  }
+}
 </style>
