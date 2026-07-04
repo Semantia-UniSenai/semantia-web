@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { splitIntoLines } from '../../live/captionLines'
 import type { TranscriptEntry } from '../../live/types'
 
 /**
  * Palco de legendas ao vivo — o coração da experiência do aluno surdo.
- * Fundo escuro de alto contraste, texto grande e ajustável, frase em
- * formação destacada da transcrição consolidada, rolagem presa ao vivo.
+ * Estilo karaokê: cada frase vira uma ou mais linhas curtas que descem na
+ * tela; a linha corrente fica em destaque e as anteriores esmaecem. O aluno
+ * pode rolar de volta pra reler — a rolagem só fica presa ao vivo quando ele
+ * está no fim.
  */
 const props = defineProps<{
   transcript: TranscriptEntry[]
@@ -13,6 +16,20 @@ const props = defineProps<{
   /** Modo compacto (preview do professor). */
   compact?: boolean
 }>()
+
+interface CaptionLine {
+  key: string
+  text: string
+}
+
+const lines = computed<CaptionLine[]>(() =>
+  props.transcript.flatMap((entry) =>
+    splitIntoLines(entry.text).map((text, i) => ({
+      key: `${entry.seq}:${i}`,
+      text,
+    })),
+  ),
+)
 
 const FONT_KEY = 'semantia.captions.font'
 const FONT_STEPS = [22, 28, 34, 42, 52]
@@ -100,19 +117,29 @@ watch(
       tabindex="0"
       @scroll.passive="onScroll"
     >
-      <p v-if="transcript.length === 0 && !partialText" class="captions__waiting">
+      <p v-if="lines.length === 0 && !partialText" class="captions__waiting">
         Aguardando o professor falar…
       </p>
       <template v-else>
-        <!-- O espaço concatenado garante a separação entre frases (o
-             condense do template engoliria um espaço literal). -->
-        <span
-          v-for="entry in transcript"
-          :key="entry.seq"
-          class="captions__final"
-          >{{ entry.text + ' ' }}</span
-        >
-        <span v-if="partialText" class="captions__partial">{{ partialText }}</span>
+        <transition-group name="line" tag="div" class="captions__lines">
+          <p
+            v-for="(line, i) in lines"
+            :key="line.key"
+            class="captions__line"
+            :class="{
+              'captions__line--current': i === lines.length - 1 && !partialText,
+            }"
+          >
+            {{ line.text }}
+          </p>
+          <p
+            v-if="partialText"
+            key="partial"
+            class="captions__line captions__line--partial"
+          >
+            {{ partialText }}
+          </p>
+        </transition-group>
       </template>
     </div>
 
@@ -216,11 +243,35 @@ watch(
   opacity: 0.65;
   font-weight: 500;
 }
-.captions__final {
-  color: #f4f6fb;
+.captions__lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  text-align: center;
 }
-.captions__partial {
+.captions__line {
+  margin: 0;
+  color: #f4f6fb;
+  opacity: 0.55;
+  transition: opacity 0.25s ease;
+}
+.captions__line--current {
+  opacity: 1;
+  color: #fff;
+}
+.captions__line--partial {
+  opacity: 1;
   color: #9fb6e8;
+}
+/* Linha nova entra deslizando de baixo (karaokê). */
+.line-enter-active {
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
+}
+.line-enter-from {
+  opacity: 0;
+  transform: translateY(14px);
 }
 .captions__jump {
   position: absolute;
@@ -252,6 +303,10 @@ watch(
 @media (prefers-reduced-motion: reduce) {
   .dot {
     animation: none;
+  }
+  .captions__line,
+  .line-enter-active {
+    transition: none;
   }
 }
 </style>

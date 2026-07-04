@@ -29,27 +29,59 @@ describe('CaptionStage', () => {
     )
   })
 
-  it('renderiza finais e parcial com classes distintas', () => {
+  it('renderiza cada frase como linha e a parcial com classe própria', () => {
     const wrapper = mountStage({
       transcript: [entry(1, 'Primeira frase.'), entry(2, 'Segunda frase.')],
       partialText: 'terceira em formação',
     })
 
-    const finals = wrapper.findAll('.captions__final')
-    expect(finals).toHaveLength(2)
-    expect(finals[0]!.text()).toBe('Primeira frase.')
-    expect(finals[1]!.text()).toBe('Segunda frase.')
+    const lines = wrapper.findAll('.captions__line')
+    expect(lines).toHaveLength(3)
+    expect(lines[0]!.text()).toBe('Primeira frase.')
+    expect(lines[1]!.text()).toBe('Segunda frase.')
 
-    const partial = wrapper.find('.captions__partial')
+    const partial = wrapper.find('.captions__line--partial')
     expect(partial.exists()).toBe(true)
     expect(partial.text()).toBe('terceira em formação')
     expect(wrapper.find('.captions__waiting').exists()).toBe(false)
   })
 
+  it('quebra um final longo em linhas curtas balanceadas (karaokê)', () => {
+    const wrapper = mountStage({
+      transcript: [
+        entry(1, 'um dois três quatro cinco seis sete oito nove'),
+      ],
+    })
+
+    const lines = wrapper.findAll('.captions__line')
+    expect(lines).toHaveLength(2)
+    expect(lines[0]!.text()).toBe('um dois três quatro cinco')
+    expect(lines[1]!.text()).toBe('seis sete oito nove')
+  })
+
+  it('destaca a última linha como corrente quando não há parcial', () => {
+    const wrapper = mountStage({
+      transcript: [entry(1, 'Primeira frase.'), entry(2, 'Segunda frase.')],
+    })
+
+    const lines = wrapper.findAll('.captions__line')
+    expect(lines[0]!.classes()).not.toContain('captions__line--current')
+    expect(lines[1]!.classes()).toContain('captions__line--current')
+  })
+
+  it('com parcial em formação, nenhuma linha final fica marcada como corrente', () => {
+    const wrapper = mountStage({
+      transcript: [entry(1, 'Primeira frase.')],
+      partialText: 'segunda em formação',
+    })
+
+    expect(wrapper.findAll('.captions__line--current')).toHaveLength(0)
+  })
+
   it('só parcial (sem finais) também sai do estado de espera', () => {
     const wrapper = mountStage({ partialText: 'oi tur' })
     expect(wrapper.find('.captions__waiting').exists()).toBe(false)
-    expect(wrapper.find('.captions__partial').text()).toBe('oi tur')
+    expect(wrapper.find('.captions__line--partial').text()).toBe('oi tur')
   })
 
   // NOTA: os testes de fonte semeiam o localStorage antes de montar por causa

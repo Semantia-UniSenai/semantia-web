@@ -7,6 +7,7 @@ import ChatPanel from '../components/live/ChatPanel.vue'
 import HandsQueue from '../components/live/HandsQueue.vue'
 import MicControl from '../components/live/MicControl.vue'
 import { playHandChime } from '../live/chime'
+import { stripDisfluencies } from '../live/disfluencies'
 import { useLiveSession } from '../live/useLiveSession'
 import { useSpeechRecognition } from '../live/useSpeechRecognition'
 import { useAuth } from '../stores/auth'
@@ -49,7 +50,10 @@ const speech = useSpeechRecognition({
       partialTimer = null
       pendingPartial = null
     }
-    void live.publishFinal(text)
+    // Limpa vícios ANTES de publicar: toda a sala (e a persistência) recebe
+    // o texto já filtrado. A parcial segue literal — é só o "ao vivo cru".
+    const clean = stripDisfluencies(text)
+    if (clean) void live.publishFinal(clean)
   },
 })
 
