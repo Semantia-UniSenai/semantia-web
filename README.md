@@ -1,73 +1,132 @@
-# Semantia — Web (front)
+# Semantia — Web
 
-Plataforma web de acessibilidade em **Libras**: tradução em avatar 3D (VLibras),
-ferramentas de apoio e uma área logada com treino gamificado de datilologia.
+Frontend do **Semantia**, plataforma de comunicação acessível em tempo real. O núcleo atual em
+evolução permite que uma pessoa fale e participantes acompanhem legendas acessíveis; as
+ferramentas de Libras, datilologia e ranking continuam disponíveis sem definir sozinhas o MVP.
 
-Vue 3 + Vite + TypeScript. Consome a API ([semantia-api](https://github.com/Semantia-UniSenai/semantia-api))
-por um client gerado com **orval** a partir do OpenAPI/Swagger.
+O contrato canônico está no
+[`semantia-cerebro`](https://github.com/Semantia-UniSenai/semantia-cerebro/blob/main/produto/contrato-mvp-transcricao-tempo-real.md).
+As rotas e copys de turma/professor/aluno são **fundação educacional legada a generalizar**.
+
+## Estado funcional
+
+### Implementado em `dev`
+
+- landing pública e ferramentas de acessibilidade;
+- VLibras global;
+- cadastro/login JWT e área autenticada;
+- datilologia com score e ranking;
+- turmas, convites e sessões ao vivo no domínio escolar atual;
+- captura via Web Speech API;
+- eventos parciais/finais por Socket.IO;
+- legenda karaokê literal, chat, presença e mãos levantadas;
+- tratamento do erro recorrente `network` do SpeechRecognition.
+
+### Planejado para o contrato atual
+
+- sala, anfitrião/comunicador e participante genéricos;
+- ingresso de convidado por link sem conta;
+- configuração do contexto da plateia;
+- preferência individual literal/adaptada;
+- apresentação da versão adaptada com fallback literal;
+- UX completa responsiva/acessível da sala;
+- exclusão e retenção de conteúdo/metadados identificáveis por 30 dias, com logs técnicos mínimos
+  sem identidade por no máximo 90 dias;
+- mídia de conferência, VLibras na sala e outros complementos após o núcleo.
+
+Não trate o domínio escolar atual nem uma tela existente como prova dessas entregas planejadas.
 
 ## Stack
 
-- **Vue 3** (`<script setup>`) + **Vite** + **TypeScript**
-- **vue-router** (com guard de rota para a área logada)
-- **@tanstack/vue-query** + **axios** (client gerado pelo orval)
-- **orval** — gera o client tipado e os hooks a partir do `/docs-json` da API
-- **VLibras** (`@vue-a11y/vlibras`) — tradutor oficial gov.br
+- Vue 3 com `<script setup>`;
+- Vite e TypeScript;
+- `vue-router`;
+- TanStack Vue Query + Axios;
+- client tipado gerado por Orval a partir do OpenAPI da API;
+- Socket.IO Client;
+- VLibras oficial via `@vue-a11y/vlibras`;
+- Vitest + Vue Test Utils.
 
-## Estrutura
+## Rotas atuais
 
-```
+| Rota | Estado | Observação |
+|---|---|---|
+| `/` | implementada | landing pública e ferramentas |
+| `/entrar` | implementada | login |
+| `/criar-conta` | implementada | cadastro |
+| `/app` | implementada | área autenticada/datilo/ranking |
+| `/app/turmas` | legado implementado | lista escolar a generalizar |
+| `/app/turmas/:id` | legado implementado | detalhe escolar a generalizar |
+| `/app/aula/:id` | legado implementado | sala ao vivo atual |
+| `/aula/convite/:token` | parcial | convite existe, mas ainda exige conta |
+| `/turma/convite/:code` | legado implementado | associação escolar |
+
+## Estrutura principal
+
+```text
 src/
-├── api/
-│   ├── generated/      # client orval (NÃO editar à mão — `pnpm api:gen`)
-│   └── mutator.ts      # instância axios + injeção do Bearer token
+├── api/                       # client Orval e mutator Axios/JWT
 ├── components/
-│   └── FingerspellingGame.vue   # jogo: reconhecimento de datilologia
-├── data/               # tools, conteúdo livre, mapa letra→segundo do vídeo
-├── router/             # rotas + guard (área logada)
-├── stores/auth.ts      # sessão (token/usuário em localStorage)
-└── views/              # Landing, Login, Signup, AppHome (treino + ranking)
+│   ├── classes/               # componentes escolares legados
+│   └── live/                  # legenda, microfone, chat e mãos
+├── data/                      # ferramentas e conteúdo público
+├── live/                      # Socket.IO, SpeechRecognition e caption lines
+├── router/                    # rotas e guards
+├── stores/auth.ts             # sessão JWT persistida
+└── views/                     # landing, auth, app, turmas, convites e sala ao vivo
 ```
+
+## Fluxo atual da sala
+
+1. Usuário autenticado abre a aula/sessão.
+2. Comunicador autoriza o microfone.
+3. Web Speech API produz parciais e finais.
+4. Socket.IO transmite os eventos à API.
+5. O frontend apresenta parciais e o transcript literal final no palco karaokê.
+6. Chat, presença e mãos usam o mesmo namespace `/live`.
+
+A limpeza canônica acontece no backend. O frontend só quebra texto em linhas e apresenta a
+experiência; clientes alternativos não podem decidir a regra de negócio.
 
 ## Rodar local
 
-Pré-requisito: a API rodando (ver repo `semantia-api`), por padrão em `http://localhost:3000`.
+Pré-requisito: API em `http://localhost:3000` ou `VITE_API_URL` apontando para outro ambiente.
 
 ```bash
 pnpm install
-cp .env.example .env      # ajuste VITE_API_URL se necessário
-pnpm dev                  # http://localhost:5173
+cp .env.example .env
+pnpm dev
 ```
 
-### Variáveis de ambiente
+Frontend: `http://localhost:5173`.
 
-- `VITE_API_URL` — origin da API (ex.: `http://localhost:3000`). As rotas geradas
-  pelo orval já incluem o prefixo `/api`, então aqui vai só a origin.
+`VITE_API_URL` recebe somente a origin da API; as rotas geradas já incluem `/api`.
 
-## Client da API (orval)
+## Sincronizar o contrato da API
 
 ```bash
-pnpm api:spec   # captura o OpenAPI da API rodando -> openapi.json
-pnpm api:gen    # gera o client em src/api/generated
-pnpm api:sync   # os dois acima em sequência
+pnpm api:spec
+pnpm api:gen
+# ou
+pnpm api:sync
 ```
 
-## Funcionalidades
+`src/api/generated` é gerado e não deve ser editado à mão. Alterações locais de host/base URL não
+devem entrar em PRs de produto.
 
-- **Landing** pública: hero + ferramentas (Ferramentas / Dúvidas e Formação / Jogos).
-- **Cadastro/Login** (JWT).
-- **Área logada** (`/app`, protegida por guard): **Datilologia Challenge** —
-  a mão soletra uma letra (vídeo do alfabeto manual, com o rótulo mascarado),
-  o usuário escolhe a letra; pontua por acerto + velocidade; o score vai pro
-  **ranking** geral.
-
-## Build
+## Gates
 
 ```bash
-pnpm build      # vue-tsc + vite build -> dist/
+pnpm test
+pnpm build
 ```
 
-## Deploy
+Para mudanças na sala, os gates adicionais são navegador real, microfone, Socket.IO, reconexão,
+mobile, teclado, contraste, `aria-live` e `prefers-reduced-motion`. Testes unitários não provam
+a disponibilidade do Web Speech API ou do VLibras.
 
-Front na **Vercel** (build `pnpm build`, output `dist/`). Defina `VITE_API_URL`
-apontando para a API publicada (Render). A API fica no **Render** e o banco no **Neon**.
+## Deploy documentado
+
+O frontend é compilado para `dist/` e pode ser publicado na Vercel. A capacidade, observabilidade
+e política de retenção do novo MVP só podem ser anunciadas depois dos cards de produção e
+privacidade; o frontend não deve prometer esses itens antecipadamente.
