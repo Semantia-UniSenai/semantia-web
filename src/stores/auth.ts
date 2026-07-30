@@ -1,11 +1,9 @@
 import { computed, ref } from 'vue'
-import type { UserRole } from '../api/generated/model'
 
 export interface AuthUser {
   id: string
   name: string
   email: string
-  role: UserRole
 }
 
 const TOKEN_KEY = 'semantia.token'
@@ -15,25 +13,36 @@ function readUser(): AuthUser | null {
   const raw = localStorage.getItem(USER_KEY)
   if (!raw) return null
   try {
-    return JSON.parse(raw) as AuthUser
+    const value = JSON.parse(raw) as Record<string, unknown>
+    if (
+      typeof value.id !== 'string' ||
+      typeof value.name !== 'string' ||
+      typeof value.email !== 'string'
+    ) {
+      return null
+    }
+    return { id: value.id, name: value.name, email: value.email }
   } catch {
     return null
   }
 }
 
-// singleton state (módulo carregado uma vez)
 const token = ref<string | null>(localStorage.getItem(TOKEN_KEY))
 const user = ref<AuthUser | null>(readUser())
 
 export function useAuth() {
   const isAuthenticated = computed(() => !!token.value)
-  const isProfessor = computed(() => user.value?.role === 'PROFESSOR')
 
   function setSession(newToken: string, newUser: AuthUser) {
+    const sanitized = {
+      id: newUser.id,
+      name: newUser.name,
+      email: newUser.email,
+    }
     token.value = newToken
-    user.value = newUser
+    user.value = sanitized
     localStorage.setItem(TOKEN_KEY, newToken)
-    localStorage.setItem(USER_KEY, JSON.stringify(newUser))
+    localStorage.setItem(USER_KEY, JSON.stringify(sanitized))
   }
 
   function logout() {
@@ -43,7 +52,7 @@ export function useAuth() {
     localStorage.removeItem(USER_KEY)
   }
 
-  return { token, user, isAuthenticated, isProfessor, setSession, logout }
+  return { token, user, isAuthenticated, setSession, logout }
 }
 
 export function getToken(): string | null {

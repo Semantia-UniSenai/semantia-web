@@ -3,7 +3,7 @@ import { onBeforeUnmount, readonly, ref, shallowRef } from 'vue'
 /**
  * Web Speech API (reconhecimento de fala nativo do browser, pt-BR).
  *
- * É o motor de transcrição do MVP: roda no browser do PROFESSOR, colado no
+ * É o motor de transcrição do MVP: roda no browser do comunicador, colado no
  * microfone, e devolve resultados parciais em centenas de ms — pela rede só
  * trafega texto. Suportado em Chrome/Edge (webkitSpeechRecognition).
  *

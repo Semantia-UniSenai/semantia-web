@@ -1,209 +1,184 @@
-import { computed, onBeforeUnmount, ref, shallowRef } from 'vue'
-import type { SessionDetailDto } from '../api/generated/model'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { useAuth } from '../stores/auth'
+import { readGuestAccess } from './guestAccess'
 import { createLiveSocket, type LiveSocket } from './socket'
 import type {
   Ack,
   AckError,
   ChatMessage,
-  LiveParticipant,
+  LiveSessionDetails,
+  Participant,
+  ParticipantRole,
   RaisedHand,
   SessionState,
   TranscriptEntry,
 } from './types'
 
-export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'offline'
-
 export interface UseLiveSessionOptions {
-  /** Chamado quando um aluno levanta a mão (para o professor tocar o aviso sonoro). */
-  onHandRaised?: (hand: RaisedHand) => void
-  /** Fábrica injetável do socket (para testes). */
-  socketFactory?: () => LiveSocket
+  socketFactory?: (accessToken?: string | null) => LiveSocket
 }
 
-/**
- * Estado reativo da sala ao vivo — um espelho, no cliente, do que o
- * LiveGateway transmite. Toda mutação chega por evento do servidor; as ações
- * locais só emitem e aguardam o ack.
- */
 export function useLiveSession(options: UseLiveSessionOptions = {}) {
-  const { user } = useAuth()
-
-  const socket = shallowRef<LiveSocket | null>(null)
-
-  const status = ref<ConnectionStatus>('connecting')
+  const { user, token: accountToken } = useAuth()
+  const socketFactory = options.socketFactory ?? createLiveSocket
+  const socket = ref<LiveSocket | null>(null)
+  const status = ref<'offline' | 'connecting' | 'connected'>('offline')
   const joinError = ref<AckError | null>(null)
-  const session = ref<SessionDetailDto | null>(null)
-  const participants = ref<LiveParticipant[]>([])
+  const actionError = ref<AckError | null>(null)
+  const session = ref<LiveSessionDetails | null>(null)
+  const role = ref<ParticipantRole | null>(null)
+  const canManage = ref(false)
+  const participants = ref<Participant[]>([])
   const raisedHands = ref<RaisedHand[]>([])
   const chat = ref<ChatMessage[]>([])
   const transcript = ref<TranscriptEntry[]>([])
   const partialText = ref('')
-  const ended = ref(false)
+  const ended = computed(() => session.value?.status === 'ENDED')
+  const joined = computed(() => !!session.value && status.value === 'connected')
+  const currentParticipantId = ref<string | null>(user.value?.id ?? null)
 
-  const isOwner = computed(
-    () => !!session.value && session.value.teacherId === user.value?.id,
-  )
-  const myHandRaised = computed(() =>
-    raisedHands.value.some((h) => h.userId === user.value?.id),
-  )
+  function connect(sessionId: string, joinToken?: string) {
+    disconnect()
+    const guest = readGuestAccess(sessionId)
+    currentParticipantId.value = user.value?.id ?? guest?.participant.participantId ?? null
+    const activeToken = accountToken.value ?? guest?.accessToken ?? null
+    const next = socketFactory(activeToken)
+    socket.value = next
+    status.value = 'connecting'
+    joinError.value = null
 
-  function bind(s: LiveSocket, sessionId: string, token?: string) {
-    const join = () => {
-      s.emit('session:join', { sessionId, token }, (r: Ack) => {
-        if (!r.ok) {
-          joinError.value = r.error
-          status.value = 'offline'
-          s.disconnect()
-        }
-      })
-    }
-
-    s.on('connect', () => {
+    next.on('connect', () => {
       status.value = 'connected'
-      // Rejoin idempotente: cobre tanto a 1ª conexão quanto reconexões
-      // (o servidor perde a presença quando o socket cai).
-      join()
+      next.emit(
+        'session:join',
+        { sessionId, token: joinToken },
+        (ack: Ack) => {
+          if (!ack.ok) {
+            joinError.value = ack.error
+            status.value = 'offline'
+            next.disconnect()
+          }
+        },
+      )
     })
-    s.io.on('reconnect_attempt', () => {
-      status.value = 'reconnecting'
+    next.on('disconnect', () => {
+      status.value = 'offline'
     })
-    // Middleware de auth do namespace rejeita o handshake com UNAUTHORIZED
-    // (token inválido/expirado) — não adianta ficar tentando reconectar.
-    s.on('connect_error', (err) => {
-      if (err.message === 'UNAUTHORIZED') {
-        joinError.value = {
-          code: 'UNAUTHORIZED',
-          message: 'Sua sessão expirou. Entre de novo.',
-        }
-        status.value = 'offline'
-        s.disconnect()
-      }
+    next.on('connect_error', (error: Error) => {
+      joinError.value = { code: 'CONNECTION_ERROR', message: error.message }
+      status.value = 'offline'
     })
-    s.on('disconnect', () => {
-      if (!ended.value && status.value !== 'offline') status.value = 'reconnecting'
-    })
-
-    s.on('session:state', (state: SessionState) => {
-      joinError.value = null
+    next.on('session:state', (state: SessionState) => {
       session.value = state.session
+      role.value = state.role
+      canManage.value = state.canManage
       participants.value = state.participants
       raisedHands.value = state.raisedHands
       chat.value = state.chat
       transcript.value = state.transcript
-      ended.value = state.session.status === 'ENDED'
     })
-
-    s.on('presence:joined', ({ user: joined }) => {
-      if (!participants.value.some((p) => p.userId === joined.userId)) {
-        participants.value = [...participants.value, joined]
-      }
+    next.on('presence:joined', (participant: Participant) => {
+      participants.value = [
+        ...participants.value.filter((item) => item.participantId !== participant.participantId),
+        participant,
+      ]
     })
-    s.on('presence:left', ({ userId }) => {
-      participants.value = participants.value.filter((p) => p.userId !== userId)
+    next.on('presence:left', ({ participantId }: { participantId: string }) => {
+      participants.value = participants.value.filter(
+        (participant) => participant.participantId !== participantId,
+      )
+      raisedHands.value = raisedHands.value.filter(
+        (hand) => hand.participantId !== participantId,
+      )
     })
-
-    s.on('transcript:partial', ({ text }) => {
-      partialText.value = text
+    next.on('hand:raised', (hand: RaisedHand) => {
+      raisedHands.value = [
+        ...raisedHands.value.filter((item) => item.participantId !== hand.participantId),
+        hand,
+      ]
     })
-    s.on('transcript:final', (entry) => {
-      // A frase consolidada substitui a parcial em formação.
-      partialText.value = ''
-      if (!transcript.value.some((t) => t.seq === entry.seq)) {
-        transcript.value = [...transcript.value, entry]
-      }
+    next.on('hand:lowered', ({ participantId }: { participantId: string }) => {
+      raisedHands.value = raisedHands.value.filter(
+        (hand) => hand.participantId !== participantId,
+      )
     })
-
-    s.on('hand:raised', (hand) => {
-      if (!raisedHands.value.some((h) => h.userId === hand.userId)) {
-        raisedHands.value = [...raisedHands.value, hand]
-        // Só o professor recebe o aviso sonoro; a mão do próprio aluno não apita.
-        if (hand.userId !== user.value?.id) options.onHandRaised?.(hand)
-      }
-    })
-    s.on('hand:lowered', ({ userId }) => {
-      raisedHands.value = raisedHands.value.filter((h) => h.userId !== userId)
-    })
-
-    s.on('chat:message', (message) => {
+    next.on('chat:message', (message: ChatMessage) => {
       chat.value = [...chat.value, message]
     })
-
-    s.on('session:ended', () => {
-      ended.value = true
+    next.on('transcript:partial', ({ text }: { text: string }) => {
+      partialText.value = text
+    })
+    next.on('transcript:final', (entry: TranscriptEntry) => {
       partialText.value = ''
-      raisedHands.value = []
-      if (session.value) session.value = { ...session.value, status: 'ENDED' }
+      transcript.value = [...transcript.value, entry].sort((a, b) => a.seq - b.seq)
+    })
+    next.on('session:ended', ({ endedAt }: { endedAt: string }) => {
+      if (session.value) {
+        session.value = { ...session.value, status: 'ENDED', endedAt }
+      }
+      partialText.value = ''
+    })
+    next.connect()
+  }
+
+  function emitAck<T>(event: string, payload?: unknown): Promise<Ack<T>> {
+    return new Promise((resolve) => {
+      const active = socket.value
+      if (!active?.connected) {
+        resolve({ ok: false, error: { code: 'OFFLINE', message: 'Sem conexão com a sala' } })
+        return
+      }
+      const callback = (ack: Ack<T>) => {
+        if (!ack.ok) actionError.value = ack.error
+        resolve(ack)
+      }
+      if (payload === undefined) active.emit(event, callback)
+      else active.emit(event, payload, callback)
     })
   }
 
-  function connect(sessionId: string, token?: string) {
-    disconnect()
-    status.value = 'connecting'
-    joinError.value = null
-    ended.value = false
-    const s = (options.socketFactory ?? createLiveSocket)()
-    socket.value = s
-    bind(s, sessionId, token)
-  }
+  const publishPartial = (text: string) => emitAck('transcript:partial', { text })
+  const publishFinal = (text: string, startMs: number, endMs?: number, confidence?: number) =>
+    emitAck<{ seq: number }>('transcript:final', { text, startMs, endMs, confidence })
+  const sendChat = (text: string) => emitAck('chat:send', { text })
+  const raiseHand = () => emitAck('hand:raise')
+  const lowerHand = () => emitAck('hand:lower')
+  const lowerParticipantHand = (participantId: string) =>
+    emitAck('hand:lower-for', { participantId })
+  const endSession = () => emitAck('session:end')
 
   function disconnect() {
-    const s = socket.value
+    socket.value?.removeAllListeners()
+    socket.value?.disconnect()
     socket.value = null
-    if (s) {
-      s.removeAllListeners()
-      s.disconnect()
-    }
+    status.value = 'offline'
   }
 
-  /** Emite com ack e resolve o erro (ou null em sucesso). */
-  function emitAck(
-    emit: (s: LiveSocket, ack: (r: Ack) => void) => void,
-  ): Promise<AckError | null> {
-    const s = socket.value
-    if (!s) return Promise.resolve({ code: 'OFFLINE', message: 'Sem conexão' })
-    return new Promise((resolve) => {
-      emit(s, (r) => resolve(r.ok ? null : r.error))
-    })
-  }
-
-  const publishPartial = (text: string) =>
-    emitAck((s, ack) => s.emit('transcript:partial', { text }, ack))
-  const publishFinal = (text: string) =>
-    emitAck((s, ack) => s.emit('transcript:final', { text }, ack))
-  const sendChat = (text: string) =>
-    emitAck((s, ack) => s.emit('chat:send', { text }, ack))
-  const raiseHand = () => emitAck((s, ack) => s.emit('hand:raise', ack))
-  const lowerHand = () => emitAck((s, ack) => s.emit('hand:lower', ack))
-  const endSession = () => emitAck((s, ack) => s.emit('session:end', ack))
-
-  function leave() {
-    const s = socket.value
-    if (s?.connected) s.emit('session:leave', () => {})
-    disconnect()
-  }
-
-  onBeforeUnmount(leave)
+  onBeforeUnmount(disconnect)
 
   return {
     status,
     joinError,
+    actionError,
     session,
+    role,
+    canManage,
     participants,
     raisedHands,
     chat,
     transcript,
     partialText,
     ended,
-    isOwner,
-    myHandRaised,
+    joined,
+    currentParticipantId,
     connect,
-    leave,
+    disconnect,
     publishPartial,
     publishFinal,
     sendChat,
     raiseHand,
     lowerHand,
+    lowerParticipantHand,
     endSession,
   }
 }

@@ -6,7 +6,14 @@ import CaptionStage from './CaptionStage.vue'
 const FONT_KEY = 'semantia.captions.font'
 
 function entry(seq: number, text: string): TranscriptEntry {
-  return { seq, text, at: '2026-07-02T10:00:00.000Z' }
+  return {
+    seq,
+    startMs: 0,
+    endMs: null,
+    text,
+    confidence: null,
+    createdAt: '2026-07-02T10:00:00.000Z',
+  }
 }
 
 function mountStage(props: Partial<InstanceType<typeof CaptionStage>['$props']> = {}) {
@@ -25,7 +32,7 @@ describe('CaptionStage', () => {
   it('sem transcrição nem parcial mostra o estado de espera', () => {
     const wrapper = mountStage()
     expect(wrapper.find('.captions__waiting').text()).toContain(
-      'Aguardando o professor falar',
+      'Aguardando o comunicador falar',
     )
   })
 

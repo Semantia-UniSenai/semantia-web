@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Controle do microfone do professor — presentacional; a captura em si
+ * Controle do microfone do comunicador — presentacional; a captura em si
  * (Web Speech API) vive na LiveRoomView, que injeta o estado aqui.
  */
 defineProps<{
@@ -31,7 +31,7 @@ const ERROR_HINTS: Record<string, string> = {
   <div class="mic">
     <div v-if="!supported" class="mic__unsupported" role="alert">
       <strong>Navegador sem reconhecimento de voz.</strong>
-      Use o Chrome ou o Edge no computador para transcrever a aula.
+      Use o Chrome ou o Edge no computador para transcrever a sessão.
     </div>
 
     <template v-else>
@@ -57,8 +57,8 @@ const ERROR_HINTS: Record<string, string> = {
       <p class="mic__status" :class="{ live: listening }">
         {{
           listening
-            ? 'Transcrevendo — os alunos estão vendo sua fala em texto.'
-            : 'Microfone pausado. Os alunos não recebem legendas.'
+            ? 'Transcrevendo — a plateia está vendo sua fala em texto.'
+            : 'Microfone pausado. A plateia não recebe texto novo.'
         }}
       </p>
     </template>
