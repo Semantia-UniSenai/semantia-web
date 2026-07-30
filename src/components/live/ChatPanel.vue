@@ -70,7 +70,7 @@ function hour(at: string): string {
         maxlength="1000"
         autocomplete="off"
         :disabled="disabled"
-        :placeholder="disabled ? 'A sessão foi encerrada' : 'Escreva uma mensagem…'"
+        :placeholder="disabled ? 'A reunião foi encerrada' : 'Escreva uma mensagem…'"
       />
       <button type="submit" :disabled="disabled || !draft.trim()" aria-label="Enviar">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">

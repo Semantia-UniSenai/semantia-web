@@ -31,6 +31,7 @@ import type {
 
 import type {
   CreateRoomDto,
+  InstantMeetingDto,
   JoinRoomDto,
   RoomDetailsDto,
   RoomDto,
@@ -46,15 +47,15 @@ import type { ErrorType , BodyType } from '../../mutator';
 
 
 /**
- * @summary Create a communication room
+ * @summary Create an instant meeting already live with an invitation token
  */
-export const createRoom = (
+export const createMeeting = (
     createRoomDto: MaybeRef<CreateRoomDto>,
  signal?: AbortSignal
 ) => {
       createRoomDto = unref(createRoomDto);
 
-      return customInstance<RoomDto>(
+      return customInstance<InstantMeetingDto>(
       {url: `/api/rooms`, method: 'POST',
       headers: {'Content-Type': 'application/json', },
       data: createRoomDto, signal
@@ -65,11 +66,11 @@ export const createRoom = (
 
 
 
-export const getCreateRoomMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRoom>>, TError,{data: BodyType<CreateRoomDto>}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof createRoom>>, TError,{data: BodyType<CreateRoomDto>}, TContext> => {
+export const getCreateMeetingMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMeeting>>, TError,{data: BodyType<CreateRoomDto>}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof createMeeting>>, TError,{data: BodyType<CreateRoomDto>}, TContext> => {
 
-const mutationKey = ['createRoom'];
+const mutationKey = ['createMeeting'];
 const {mutation: mutationOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -79,10 +80,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createRoom>>, {data: BodyType<CreateRoomDto>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createMeeting>>, {data: BodyType<CreateRoomDto>}> = (props) => {
           const {data} = props ?? {};
 
-          return  createRoom(data,)
+          return  createMeeting(data,)
         }
 
 
@@ -92,22 +93,22 @@ const {mutation: mutationOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type CreateRoomMutationResult = NonNullable<Awaited<ReturnType<typeof createRoom>>>
-    export type CreateRoomMutationBody = BodyType<CreateRoomDto>
-    export type CreateRoomMutationError = ErrorType<unknown>
+    export type CreateMeetingMutationResult = NonNullable<Awaited<ReturnType<typeof createMeeting>>>
+    export type CreateMeetingMutationBody = BodyType<CreateRoomDto>
+    export type CreateMeetingMutationError = ErrorType<unknown>
 
     /**
- * @summary Create a communication room
+ * @summary Create an instant meeting already live with an invitation token
  */
-export const useCreateRoom = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRoom>>, TError,{data: BodyType<CreateRoomDto>}, TContext>, }
+export const useCreateMeeting = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMeeting>>, TError,{data: BodyType<CreateRoomDto>}, TContext>, }
  , queryClient?: QueryClient): UseMutationReturnType<
-        Awaited<ReturnType<typeof createRoom>>,
+        Awaited<ReturnType<typeof createMeeting>>,
         TError,
         {data: BodyType<CreateRoomDto>},
         TContext
       > => {
-      return useMutation(getCreateRoomMutationOptions(options), queryClient);
+      return useMutation(getCreateMeetingMutationOptions(options), queryClient);
     }
     /**
  * @summary List rooms I host or joined

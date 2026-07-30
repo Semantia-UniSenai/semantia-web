@@ -6,7 +6,7 @@
  * OpenAPI spec version: 1.0.0
  */
 
-export interface CreateSessionDto {
-  /** Title shown to every participant */
-  title: string;
-}
+/**
+ * @nullable
+ */
+export type RoomSummaryDtoMeetingId = { [key: string]: unknown } | null;

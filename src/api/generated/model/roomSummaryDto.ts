@@ -5,7 +5,11 @@
  * Accessible real-time communication rooms with live transcription.
  * OpenAPI spec version: 1.0.0
  */
+import type { MeetingStatus } from './meetingStatus';
 import type { RoomParticipantRole } from './roomParticipantRole';
+import type { RoomSummaryDtoEndedAt } from './roomSummaryDtoEndedAt';
+import type { RoomSummaryDtoMeetingId } from './roomSummaryDtoMeetingId';
+import type { RoomSummaryDtoStartedAt } from './roomSummaryDtoStartedAt';
 
 export interface RoomSummaryDto {
   id: string;
@@ -17,4 +21,11 @@ export interface RoomSummaryDto {
   hostName: string;
   memberCount: number;
   currentUserRole: RoomParticipantRole;
+  /** @nullable */
+  meetingId: RoomSummaryDtoMeetingId;
+  meetingStatus: MeetingStatus | null;
+  /** @nullable */
+  startedAt: RoomSummaryDtoStartedAt;
+  /** @nullable */
+  endedAt: RoomSummaryDtoEndedAt;
 }

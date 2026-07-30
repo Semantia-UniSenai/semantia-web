@@ -52,9 +52,9 @@ describe('ChatPanel', () => {
     expect(wrapper.emitted('send')).toEqual([['mensagem acessível']])
   })
 
-  it('becomes read-only after the session ends', () => {
+  it('becomes read-only after the meeting ends', () => {
     const wrapper = mount(ChatPanel, { props: { messages: [], disabled: true } })
-    expect(wrapper.find('input').attributes('placeholder')).toBe('A sessão foi encerrada')
+    expect(wrapper.find('input').attributes('placeholder')).toBe('A reunião foi encerrada')
     expect(wrapper.find('button').attributes('disabled')).toBeDefined()
   })
 })

@@ -82,7 +82,7 @@ watch(
   <section
     class="captions"
     :class="{ compact }"
-    aria-label="Transcrição ao vivo da sessão"
+    aria-label="Transcrição ao vivo da reunião"
   >
     <div class="captions__tools" v-if="!compact">
       <span class="captions__label">

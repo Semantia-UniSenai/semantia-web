@@ -45,7 +45,7 @@ function extractError(e: unknown, fallback: string): string {
 
     <form class="card" @submit.prevent="onSubmit">
       <h1>Entrar</h1>
-      <p class="sub">Gerencie suas salas e acompanhe as sessões de comunicação acessível.</p>
+      <p class="sub">Abra reuniões e acompanhe a comunicação acessível em tempo real.</p>
 
       <label>
         E-mail

@@ -21,7 +21,7 @@ onMounted(async () => {
   try {
     session.value = await resolveSessionToken({ token: token.value })
   } catch {
-    error.value = 'Este convite não existe, expirou ou a sessão já foi encerrada.'
+    error.value = 'Este convite não existe, expirou ou a reunião já foi encerrada.'
   } finally {
     loading.value = false
   }
@@ -52,13 +52,13 @@ async function enter() {
     <section class="card" aria-live="polite">
       <div v-if="loading" class="state">Validando convite…</div>
       <template v-else-if="session">
-        <span class="live"><i aria-hidden="true"></i> Sessão ao vivo</span>
+        <span class="live"><i aria-hidden="true"></i> Reunião ao vivo</span>
         <p class="eyebrow">{{ session.roomName }}</p>
         <h1>{{ session.title }}</h1>
         <p>Entre como participante convidado. Você não precisa criar uma conta.</p>
         <form @submit.prevent="enter">
           <label>Como devemos chamar você?<input v-model="displayName" required minlength="2" maxlength="80" autocomplete="name" placeholder="Seu nome" /></label>
-          <button type="submit" :disabled="entering">{{ entering ? 'Validando…' : 'Entrar na sessão' }}</button>
+          <button type="submit" :disabled="entering">{{ entering ? 'Validando…' : 'Entrar na reunião' }}</button>
         </form>
       </template>
       <template v-else>

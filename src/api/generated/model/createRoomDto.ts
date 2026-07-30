@@ -7,5 +7,6 @@
  */
 
 export interface CreateRoomDto {
-  name: string;
+  /** Optional meeting name; instant meetings do not require setup */
+  name?: string;
 }

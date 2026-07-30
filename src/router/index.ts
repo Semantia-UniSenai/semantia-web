@@ -6,8 +6,6 @@ import LoginView from '../views/LoginView.vue'
 import SignupView from '../views/SignupView.vue'
 import AppHomeView from '../views/AppHomeView.vue'
 import RoomsView from '../views/RoomsView.vue'
-import RoomDetailView from '../views/RoomDetailView.vue'
-import RoomInviteView from '../views/RoomInviteView.vue'
 import SessionInviteView from '../views/SessionInviteView.vue'
 import LiveRoomView from '../views/LiveRoomView.vue'
 
@@ -18,12 +16,11 @@ const router = createRouter({
     { path: '/', component: LandingView },
     { path: '/entrar', component: LoginView, meta: { guestOnly: true } },
     { path: '/criar-conta', component: SignupView, meta: { guestOnly: true } },
-    { path: '/convite/sala/:code', component: RoomInviteView },
-    { path: '/convite/sessao/:token', component: SessionInviteView },
+    { path: '/convite/reuniao/:token', component: SessionInviteView },
     { path: '/sala/:sessionId', component: LiveRoomView, meta: { liveAccess: true } },
     { path: '/app', component: AppHomeView, meta: { requiresAuth: true } },
     { path: '/app/salas', component: RoomsView, meta: { requiresAuth: true } },
-    { path: '/app/salas/:id', component: RoomDetailView, meta: { requiresAuth: true } },
+
 
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],

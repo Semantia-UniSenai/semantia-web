@@ -22,7 +22,7 @@ const speech = useSpeechRecognition({
   onFinal: (text) => void live.publishFinal(text, Date.now() - startedAt),
 })
 
-const backTo = computed(() => live.session.value ? `/app/salas/${live.session.value.roomId}` : '/app/salas')
+const backTo = computed(() => '/app/salas')
 const myHand = computed(() => live.raisedHands.value.some((hand) => hand.participantId === live.currentParticipantId.value))
 
 onMounted(() => live.connect(sessionId.value, inviteToken.value))
@@ -31,7 +31,7 @@ watch(() => live.ended.value, (ended) => { if (ended) speech.stop() })
 async function copyInvite() {
   const token = live.session.value?.joinToken
   if (!token) return
-  await navigator.clipboard.writeText(`${location.origin}/convite/sessao/${token}`)
+  await navigator.clipboard.writeText(`${location.origin}/convite/reuniao/${token}`)
   copied.value = true
   window.setTimeout(() => (copied.value = false), 1800)
 }
@@ -60,24 +60,24 @@ function leave() {
       <button class="back" type="button" @click="leave">← Sair</button>
       <div class="identity">
         <span class="status" :class="{ ended: live.ended.value }"><i></i>{{ live.ended.value ? 'Encerrada' : 'Ao vivo' }}</span>
-        <strong>{{ live.session.value?.title ?? 'Conectando à sessão…' }}</strong>
+        <strong>{{ live.session.value?.title ?? 'Conectando à reunião…' }}</strong>
         <small>{{ live.session.value?.roomName }}</small>
       </div>
       <div class="topbar__actions">
         <button v-if="live.canManage.value && !live.ended.value" class="ghost" type="button" @click="copyInvite">{{ copied ? 'Link copiado' : 'Convidar' }}</button>
-        <button v-if="live.canManage.value && !live.ended.value" class="danger" type="button" @click="end">{{ confirmingEnd ? 'Confirmar encerramento' : 'Encerrar sessão' }}</button>
+        <button v-if="live.canManage.value && !live.ended.value" class="danger" type="button" @click="end">{{ confirmingEnd ? 'Confirmar encerramento' : 'Encerrar reunião' }}</button>
       </div>
     </header>
 
     <section v-if="live.joinError.value" class="fatal" role="alert">
       <h1>Não foi possível entrar</h1>
       <p>{{ live.joinError.value.message }}</p>
-      <RouterLink :to="backTo">Voltar às salas</RouterLink>
+      <RouterLink :to="backTo">Voltar às reuniões</RouterLink>
     </section>
 
     <template v-else>
-      <div v-if="live.status.value !== 'connected'" class="connecting">Conectando à sala segura…</div>
-      <div v-if="live.ended.value" class="ended-banner" role="status">Sessão encerrada. O conteúdo está disponível somente para leitura conforme a retenção configurada.</div>
+      <div v-if="live.status.value !== 'connected'" class="connecting">Conectando à reunião segura…</div>
+      <div v-if="live.ended.value" class="ended-banner" role="status">Reunião encerrada. O conteúdo está disponível somente para leitura conforme a retenção configurada.</div>
 
       <div class="workspace">
         <section class="stage">

@@ -31,7 +31,7 @@ const ERROR_HINTS: Record<string, string> = {
   <div class="mic">
     <div v-if="!supported" class="mic__unsupported" role="alert">
       <strong>Navegador sem reconhecimento de voz.</strong>
-      Use o Chrome ou o Edge no computador para transcrever a sessão.
+      Use o Chrome ou o Edge no computador para transcrever a reunião.
     </div>
 
     <template v-else>
