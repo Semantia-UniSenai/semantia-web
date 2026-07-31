@@ -47,4 +47,17 @@ describe('AppHomeView instant meeting entry point', () => {
     expect(mocks.createMeeting).toHaveBeenCalledWith({})
     expect(mocks.push).toHaveBeenCalledWith('/sala/meeting-home')
   })
+
+  it('presents invitation entry as a clear meeting action instead of a technical URL field', () => {
+    const wrapper = mount(AppHomeView)
+    const inviteInput = wrapper.get('#meeting-invite')
+    const inviteLabel = wrapper.get('label[for="meeting-invite"]')
+    const inviteForm = wrapper.get('form[aria-label="Entrar com convite"]')
+
+    expect(inviteLabel.text()).toBe('Link ou código da reunião')
+    expect(inviteInput.attributes('placeholder')).toBe('Cole o link ou código do convite')
+    expect(inviteInput.attributes('autocomplete')).toBe('off')
+    expect(inviteForm.get('button[type="submit"]').text()).toContain('Entrar na reunião')
+    expect(inviteForm.text()).not.toContain('https://')
+  })
 })
