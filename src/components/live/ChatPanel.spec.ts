@@ -47,6 +47,7 @@ describe('ChatPanel', () => {
 
   it('trims and emits messages', async () => {
     const wrapper = mount(ChatPanel, { props: { messages: [] } })
+    expect(wrapper.find('button[type="submit"]').attributes('aria-label')).toBe('Enviar mensagem')
     await wrapper.find('input').setValue('  mensagem acessível  ')
     await wrapper.find('form').trigger('submit')
     expect(wrapper.emitted('send')).toEqual([['mensagem acessível']])

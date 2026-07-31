@@ -72,7 +72,7 @@ function hour(at: string): string {
         :disabled="disabled"
         :placeholder="disabled ? 'A reunião foi encerrada' : 'Escreva uma mensagem…'"
       />
-      <button type="submit" :disabled="disabled || !draft.trim()" aria-label="Enviar">
+      <button type="submit" :disabled="disabled || !draft.trim()" aria-label="Enviar mensagem">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path
             d="M3.4 20.4 20.8 12 3.4 3.6l2.8 6.9L14 12l-7.8 1.5-2.8 6.9Z"

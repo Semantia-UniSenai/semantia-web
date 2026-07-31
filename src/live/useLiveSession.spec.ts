@@ -1,8 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, h } from 'vue'
 import type { LiveSocket } from './socket'
 import type { AckError, ChatMessage, SessionState, TranscriptEntry } from './types'
+import { saveGuestAccess } from './guestAccess'
 import { useLiveSession } from './useLiveSession'
 
 vi.mock('../stores/auth', async () => {
@@ -90,6 +91,10 @@ function setup() {
   return { socket, factory, live, wrapper }
 }
 
+beforeEach(() => {
+  sessionStorage.clear()
+})
+
 describe('useLiveSession generic room contract', () => {
   it('authenticates the socket and joins one session', () => {
     const { socket, factory, live } = setup()
@@ -101,15 +106,46 @@ describe('useLiveSession generic room contract', () => {
     expect(socket.last('session:join')?.args[0]).toEqual({ sessionId: 'session-1', token: 'invite-1' })
   })
 
-  it('hydrates contextual role, permissions and presence', () => {
+  it('usa o acesso específico do convite mesmo quando existe uma conta autenticada', () => {
+    saveGuestAccess({
+      accessToken: 'guest-jwt',
+      sessionId: 'guest-session',
+      participant: { participantId: 'guest-1', name: 'Pessoa surda', role: 'GUEST' },
+    })
+    const { factory, live } = setup()
+
+    live.connect('guest-session')
+
+    expect(factory).toHaveBeenCalledWith('guest-jwt')
+    expect(live.currentParticipantId.value).toBe('guest-1')
+  })
+
+  it('normaliza os envelopes reais da API para papel, presença, chat e legenda', () => {
     const { socket, live } = setup()
     live.connect('session-1')
-    socket.fire('session:state', state)
+    socket.fire('session:state', {
+      session,
+      canManage: true,
+      self: { participantId: 'account-1', name: 'Ana', role: 'HOST' },
+      participants: [{ participantId: 'account-1', name: 'Ana', role: 'HOST' }],
+      raisedHands: [],
+      chat: [{ id: 'message-0', participantId: 'account-1', name: 'Ana', role: 'HOST', text: 'Abertura', at: '2026-07-30T10:01:00.000Z' }],
+      transcript: [{ seq: 1, text: 'Bem-vindos', at: '2026-07-30T10:01:05.000Z' }],
+    })
     expect(live.role.value).toBe('HOST')
     expect(live.canManage.value).toBe(true)
-    expect(live.participants.value[0]?.participantId).toBe('account-1')
-    socket.fire('presence:joined', { participantId: 'guest-1', name: 'Bruno', role: 'GUEST' })
-    expect(live.participants.value).toHaveLength(2)
+    expect(live.chat.value[0]).toMatchObject({ participantName: 'Ana', participantRole: 'HOST', createdAt: '2026-07-30T10:01:00.000Z' })
+    expect(live.transcript.value[0]).toMatchObject({ text: 'Bem-vindos', createdAt: '2026-07-30T10:01:05.000Z' })
+
+    socket.fire('presence:joined', {
+      participant: { participantId: 'guest-1', name: 'Bruno', role: 'GUEST' },
+    })
+    expect(live.participants.value.at(-1)).toEqual({ participantId: 'guest-1', name: 'Bruno', role: 'GUEST' })
+
+    socket.fire('chat:message', {
+      id: 'message-1', participantId: 'guest-1', name: 'Bruno', role: 'GUEST', text: 'Olá', at: '2026-07-30T10:02:00.000Z',
+    })
+    expect(live.chat.value.at(-1)).toMatchObject({ participantName: 'Bruno', participantRole: 'GUEST' })
   })
 
   it('keeps transcript and chat payloads generic', () => {

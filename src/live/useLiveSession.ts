@@ -10,12 +10,66 @@ import type {
   Participant,
   ParticipantRole,
   RaisedHand,
-  SessionState,
   TranscriptEntry,
 } from './types'
 
 export interface UseLiveSessionOptions {
   socketFactory?: (accessToken?: string | null) => LiveSocket
+}
+
+interface SocketChatMessage {
+  id: string
+  participantId: string
+  participantName?: string
+  participantRole?: ParticipantRole
+  name?: string
+  role?: ParticipantRole
+  text: string
+  createdAt?: string
+  at?: string
+}
+
+interface SocketTranscriptEntry {
+  seq: number
+  startMs?: number
+  endMs?: number | null
+  text: string
+  confidence?: number | null
+  createdAt?: string
+  at?: string
+}
+
+interface SocketSessionState {
+  session: LiveSessionDetails
+  role?: ParticipantRole
+  self?: Participant
+  canManage: boolean
+  participants: Participant[]
+  raisedHands: RaisedHand[]
+  chat: SocketChatMessage[]
+  transcript: SocketTranscriptEntry[]
+}
+
+function normalizeChatMessage(message: SocketChatMessage): ChatMessage {
+  return {
+    id: message.id,
+    participantId: message.participantId,
+    participantName: message.participantName ?? message.name ?? 'Participante',
+    participantRole: message.participantRole ?? message.role ?? 'PARTICIPANT',
+    text: message.text,
+    createdAt: message.createdAt ?? message.at ?? '',
+  }
+}
+
+function normalizeTranscriptEntry(entry: SocketTranscriptEntry): TranscriptEntry {
+  return {
+    seq: entry.seq,
+    startMs: entry.startMs ?? 0,
+    endMs: entry.endMs ?? null,
+    text: entry.text,
+    confidence: entry.confidence ?? null,
+    createdAt: entry.createdAt ?? entry.at ?? '',
+  }
 }
 
 export function useLiveSession(options: UseLiveSessionOptions = {}) {
@@ -40,8 +94,8 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
   function connect(sessionId: string, joinToken?: string) {
     disconnect()
     const guest = readGuestAccess(sessionId)
-    currentParticipantId.value = user.value?.id ?? guest?.participant.participantId ?? null
-    const activeToken = accountToken.value ?? guest?.accessToken ?? null
+    currentParticipantId.value = guest?.participant.participantId ?? user.value?.id ?? null
+    const activeToken = guest?.accessToken ?? accountToken.value ?? null
     const next = socketFactory(activeToken)
     socket.value = next
     status.value = 'connecting'
@@ -68,16 +122,17 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
       joinError.value = { code: 'CONNECTION_ERROR', message: error.message }
       status.value = 'offline'
     })
-    next.on('session:state', (state: SessionState) => {
+    next.on('session:state', (state: SocketSessionState) => {
       session.value = state.session
-      role.value = state.role
+      role.value = state.role ?? state.self?.role ?? null
       canManage.value = state.canManage
       participants.value = state.participants
       raisedHands.value = state.raisedHands
-      chat.value = state.chat
-      transcript.value = state.transcript
+      chat.value = state.chat.map(normalizeChatMessage)
+      transcript.value = state.transcript.map(normalizeTranscriptEntry)
     })
-    next.on('presence:joined', (participant: Participant) => {
+    next.on('presence:joined', (event: Participant | { participant: Participant }) => {
+      const participant = 'participant' in event ? event.participant : event
       participants.value = [
         ...participants.value.filter((item) => item.participantId !== participant.participantId),
         participant,
@@ -102,15 +157,17 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
         (hand) => hand.participantId !== participantId,
       )
     })
-    next.on('chat:message', (message: ChatMessage) => {
-      chat.value = [...chat.value, message]
+    next.on('chat:message', (message: SocketChatMessage) => {
+      chat.value = [...chat.value, normalizeChatMessage(message)]
     })
     next.on('transcript:partial', ({ text }: { text: string }) => {
       partialText.value = text
     })
-    next.on('transcript:final', (entry: TranscriptEntry) => {
+    next.on('transcript:final', (entry: SocketTranscriptEntry) => {
       partialText.value = ''
-      transcript.value = [...transcript.value, entry].sort((a, b) => a.seq - b.seq)
+      transcript.value = [...transcript.value, normalizeTranscriptEntry(entry)].sort(
+        (a, b) => a.seq - b.seq,
+      )
     })
     next.on('session:ended', ({ endedAt }: { endedAt: string }) => {
       if (session.value) {
