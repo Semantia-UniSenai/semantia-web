@@ -74,16 +74,38 @@ describe('MicControl', () => {
     expect(wrapper.find('.mic__meter').attributes('aria-valuenow')).toBe('0')
   })
 
-  it('mostra nível real quando frames de voz chegam', () => {
+  it('não declara transcrição antes da primeira hipótese textual', () => {
     const wrapper = mountMic({
       listening: true,
       localEngine: true,
       inputState: 'receiving',
       audioLevel: 0.32,
+      transport: 'direct',
+      hasHypothesis: false,
     })
 
-    expect(wrapper.find('.mic__status').text()).toContain('Áudio recebido')
+    expect(wrapper.find('.mic__status').text()).toContain('aguardando a primeira hipótese')
+    expect(wrapper.find('.mic__status').text()).not.toContain('transcrevendo localmente')
     expect(wrapper.find('.mic__meter').attributes('aria-valuenow')).toBe('32')
+  })
+
+  it('mostra recuperação automática e confirmação textual separadamente', async () => {
+    const wrapper = mountMic({
+      listening: true,
+      localEngine: true,
+      inputState: 'receiving',
+      audioLevel: 0.32,
+      transport: 'switching',
+      hasHypothesis: false,
+    })
+
+    expect(wrapper.find('.mic__status').text()).toContain('Ajustando compatibilidade')
+
+    await wrapper.setProps({ transport: 'compatible' })
+    expect(wrapper.find('.mic__status').text()).toContain('Modo compatível ativo')
+
+    await wrapper.setProps({ hasHypothesis: true })
+    expect(wrapper.find('.mic__status').text()).toContain('Transcrição local confirmada')
   })
 
   it("error 'not-allowed' mostra a dica de permissão de microfone", () => {
@@ -114,6 +136,90 @@ describe('MicControl', () => {
     expect(wrapper.find('.mic__error').text()).toContain(
       'Erro na transcrição: esquisito',
     )
+  })
+
+  it('opens Meet-inspired audio settings and exposes the selected microphone', async () => {
+    const wrapper = mountMic({
+      audioDevices: [
+        { deviceId: 'default', groupId: 'group-1', label: 'Microfone interno' },
+        { deviceId: 'usb-headset', groupId: 'group-2', label: 'Headset USB' },
+      ],
+      selectedDeviceId: 'usb-headset',
+      audioDevicesSupported: true,
+    })
+
+    const trigger = wrapper.find('.mic__device-trigger')
+    expect(trigger.text()).toContain('Headset USB')
+    expect(trigger.attributes('aria-label')).toBe('Escolher e testar microfone')
+    expect(trigger.attributes('aria-expanded')).toBe('false')
+
+    await trigger.trigger('click')
+
+    expect(wrapper.emitted('refresh-audio-devices')?.[0]).toEqual([true])
+    expect(trigger.attributes('aria-expanded')).toBe('true')
+    const dialog = wrapper.find('[role="dialog"]')
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.text()).toContain('Configurações de áudio')
+    expect(dialog.text()).toContain('Teste do microfone')
+    expect(dialog.text()).toContain('O áudio do teste não é enviado')
+
+    await trigger.trigger('keydown', { key: 'Escape' })
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+  })
+
+  it('emits the selected device and explains why a specific input uses local mode', async () => {
+    const wrapper = mountMic({
+      audioDevices: [
+        { deviceId: 'default', groupId: '', label: 'Microfone padrão' },
+        { deviceId: 'usb-headset', groupId: '', label: 'Headset USB' },
+      ],
+      selectedDeviceId: 'default',
+      audioDevicesSupported: true,
+    })
+    await wrapper.find('.mic__device-trigger').trigger('click')
+
+    await wrapper.find('#audio-input-device').setValue('usb-headset')
+
+    expect(wrapper.emitted('select-audio-device')?.[0]).toEqual(['usb-headset'])
+    expect(wrapper.find('.mic__local-note').text()).toContain('processamento local')
+  })
+
+  it('tests the microphone with visual level and clear working feedback', async () => {
+    const wrapper = mountMic({
+      audioDevices: [
+        { deviceId: 'default', groupId: '', label: 'Microfone padrão' },
+      ],
+      selectedDeviceId: 'default',
+      audioDevicesSupported: true,
+      microphoneTestState: 'idle',
+      microphoneTestLevel: 0,
+    })
+    await wrapper.find('.mic__device-trigger').trigger('click')
+
+    const testButton = wrapper.find('.mic-test__action')
+    expect(testButton.text()).toContain('Testar microfone')
+    await testButton.trigger('click')
+    expect(wrapper.emitted('start-microphone-test')).toHaveLength(1)
+
+    await wrapper.setProps({ microphoneTestState: 'working', microphoneTestLevel: 0.72 })
+    expect(wrapper.find('.mic-test__status').text()).toContain('Seu microfone está funcionando')
+    expect(wrapper.findAll('.mic-test__bar.active').length).toBeGreaterThan(0)
+    expect(wrapper.find('.mic-test__meter').attributes('aria-valuenow')).toBe('72')
+
+    await wrapper.find('.mic-test__action').trigger('click')
+    expect(wrapper.emitted('stop-microphone-test')).toHaveLength(1)
+  })
+
+  it('shows actionable permission errors inside audio settings', async () => {
+    const wrapper = mountMic({
+      audioDevicesSupported: true,
+      audioDeviceError: 'not-allowed',
+    })
+    await wrapper.find('.mic__device-trigger').trigger('click')
+
+    const error = wrapper.find('.mic-settings__error')
+    expect(error.attributes('role')).toBe('alert')
+    expect(error.text()).toContain('Permita o acesso ao microfone')
   })
 
   it('disabled desabilita o botão', () => {

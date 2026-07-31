@@ -1,19 +1,24 @@
 import { getCurrentInstance, onBeforeUnmount, readonly, ref } from 'vue'
 import type { KaldiRecognizer, Model } from 'vosk-browser'
+import { buildAudioConstraints } from './useAudioInputDevices'
 import workletModuleUrl from './voskRecognizerProcessor.js?url&no-inline'
 
 const DEFAULT_MODEL_URL =
   import.meta.env.VITE_VOSK_MODEL_URL?.trim() ||
-  'https://ccoreilly.github.io/vosk-browser/models/vosk-model-small-pt-0.3.tar.gz'
+  '/models/vosk-model-small-pt-0.3.model'
 const WORKLET_MODULE_URL = workletModuleUrl
 const WORKLET_PROCESSOR_NAME = 'semantia-vosk-recognizer'
 const PROCESSOR_BUFFER_SIZE = 4_096
 const FINAL_RESULT_GRACE_MS = 1_000
 const AUDIO_FRAME_TIMEOUT_MS = 4_000
+const DIRECT_HYPOTHESIS_TIMEOUT_MS = 8_000
+const COMPATIBLE_HYPOTHESIS_TIMEOUT_MS = 12_000
+const TRANSPORT_SWITCH_TIMEOUT_MS = 2_000
 const AUDIO_SIGNAL_THRESHOLD = 0.003
 const VOSK_LOG_LEVEL_WARNING = -1
 
 type AudioInputState = 'idle' | 'waiting' | 'silent' | 'receiving'
+type RecognitionTransport = 'direct' | 'switching' | 'compatible'
 type StartupStage = 'model' | 'capture'
 
 interface AudioContextWindow {
@@ -26,6 +31,17 @@ interface AudioLevelMessage {
   action: 'audio-level'
   peak: number
   frames: number
+}
+
+interface AudioChunkMessage {
+  action: 'audio-chunk'
+  samples: Float32Array
+  sampleRate: number
+}
+
+interface TransportReadyMessage {
+  action: 'transport-ready'
+  transport: 'main-thread'
 }
 
 export interface UseVoskTranscriptionOptions {
@@ -83,6 +99,24 @@ function isAudioLevelMessage(value: unknown): value is AudioLevelMessage {
   )
 }
 
+function isAudioChunkMessage(value: unknown): value is AudioChunkMessage {
+  if (!value || typeof value !== 'object') return false
+  const message = value as Partial<AudioChunkMessage>
+  return (
+    message.action === 'audio-chunk' &&
+    message.samples instanceof Float32Array &&
+    typeof message.sampleRate === 'number' &&
+    Number.isFinite(message.sampleRate) &&
+    message.sampleRate > 0
+  )
+}
+
+function isTransportReadyMessage(value: unknown): value is TransportReadyMessage {
+  if (!value || typeof value !== 'object') return false
+  const message = value as Partial<TransportReadyMessage>
+  return message.action === 'transport-ready' && message.transport === 'main-thread'
+}
+
 export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
   const AudioContextCtor = getAudioContextCtor()
   const supported =
@@ -94,6 +128,8 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
   const error = ref<string | null>(null)
   const inputState = ref<AudioInputState>('idle')
   const audioLevel = ref(0)
+  const transport = ref<RecognitionTransport>('direct')
+  const hasHypothesis = ref(false)
 
   let model: Model | null = null
   let modelPromise: Promise<Model> | null = null
@@ -106,6 +142,7 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
   let silentGain: GainNode | null = null
   let recognizer: KaldiRecognizer | null = null
   let audioFrameTimeout: number | null = null
+  let hypothesisTimeout: number | null = null
   let startGeneration = 0
   let disposed = false
 
@@ -133,12 +170,48 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
     audioFrameTimeout = null
   }
 
+  function clearHypothesisTimeout() {
+    if (hypothesisTimeout !== null) window.clearTimeout(hypothesisTimeout)
+    hypothesisTimeout = null
+  }
+
+  function waitForHypothesis(activeRecognizer: KaldiRecognizer) {
+    if (hypothesisTimeout !== null) return
+    const timeout =
+      transport.value === 'direct'
+        ? DIRECT_HYPOTHESIS_TIMEOUT_MS
+        : COMPATIBLE_HYPOTHESIS_TIMEOUT_MS
+    hypothesisTimeout = window.setTimeout(() => {
+      hypothesisTimeout = null
+      if (!listening.value || recognizer !== activeRecognizer) return
+      if (transport.value === 'direct' && worklet) {
+        transport.value = 'switching'
+        worklet.port.postMessage({
+          action: 'set-transport',
+          transport: 'main-thread',
+        })
+        modelPort?.close()
+        modelPort = null
+        hypothesisTimeout = window.setTimeout(() => {
+          hypothesisTimeout = null
+          if (transport.value !== 'switching' || recognizer !== activeRecognizer) return
+          error.value = 'recognition-failed'
+          stopCapture(false)
+        }, TRANSPORT_SWITCH_TIMEOUT_MS)
+        return
+      }
+      error.value = 'recognition-no-results'
+      stopCapture(false)
+    }, timeout)
+  }
+
   function reportAudioLevel(peak: number) {
     clearAudioFrameTimeout()
     const normalizedPeak = Math.max(0, Math.min(1, peak))
     audioLevel.value = normalizedPeak
     inputState.value =
       normalizedPeak >= AUDIO_SIGNAL_THRESHOLD ? 'receiving' : 'silent'
+    if (inputState.value === 'receiving' && recognizer) waitForHypothesis(recognizer)
   }
 
   function waitForAudioFrames() {
@@ -165,6 +238,7 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
 
   function disconnectAudioGraph() {
     clearAudioFrameTimeout()
+    clearHypothesisTimeout()
     if (processor) processor.onaudioprocess = null
     if (worklet) {
       worklet.onprocessorerror = null
@@ -249,8 +323,35 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
       )
       worklet = activeWorklet
       activeWorklet.port.onmessage = (event) => {
-        if (worklet !== activeWorklet || !isAudioLevelMessage(event.data)) return
-        reportAudioLevel(event.data.peak)
+        if (worklet !== activeWorklet) return
+        if (
+          isTransportReadyMessage(event.data) &&
+          transport.value === 'switching' &&
+          recognizer === activeRecognizer
+        ) {
+          clearHypothesisTimeout()
+          transport.value = 'compatible'
+          waitForHypothesis(activeRecognizer)
+          return
+        }
+        if (isAudioLevelMessage(event.data)) {
+          reportAudioLevel(event.data.peak)
+          return
+        }
+        if (
+          isAudioChunkMessage(event.data) &&
+          transport.value === 'compatible' &&
+          recognizer === activeRecognizer
+        ) {
+          try {
+            activeRecognizer.acceptWaveformFloat(
+              event.data.samples,
+              event.data.sampleRate,
+            )
+          } catch {
+            handleRecognitionFailure(activeRecognizer)
+          }
+        }
       }
       activeWorklet.onprocessorerror = () => handleRecognitionFailure(activeRecognizer)
       activeWorklet.port.postMessage(
@@ -306,7 +407,7 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
     }
   }
 
-  async function start() {
+  async function start(deviceId: string | null = null) {
     if (listening.value || loading.value) return
     if (!supported || !AudioContextCtor) {
       error.value = 'unsupported'
@@ -325,12 +426,7 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
       const [modelResult, captureResult] = await Promise.allSettled([
         ensureModel(),
         navigator.mediaDevices.getUserMedia({
-          audio: {
-            channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-          },
+          audio: buildAudioConstraints(deviceId),
         }),
       ])
       if (modelResult.status === 'rejected') {
@@ -351,6 +447,9 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
 
       stream = capturedStream
       const activeRecognizer = new loadedModel.KaldiRecognizer(pendingContext.sampleRate)
+      transport.value = 'direct'
+      hasHypothesis.value = false
+      clearHypothesisTimeout()
       activeRecognizer.setWords(true)
       activeRecognizer.on('partialresult', (message) => {
         const text =
@@ -358,6 +457,8 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
             ? message.result.partial.trim()
             : ''
         if (text) {
+          clearHypothesisTimeout()
+          hasHypothesis.value = true
           inputState.value = 'receiving'
           options.onPartial(text)
         }
@@ -368,6 +469,8 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
             ? message.result.text.trim()
             : ''
         if (text) {
+          clearHypothesisTimeout()
+          hasHypothesis.value = true
           inputState.value = 'receiving'
           options.onFinal(text)
         }
@@ -427,6 +530,8 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
     error: readonly(error),
     inputState: readonly(inputState),
     audioLevel: readonly(audioLevel),
+    transport: readonly(transport),
+    hasHypothesis: readonly(hasHypothesis),
     start,
     stop,
   }

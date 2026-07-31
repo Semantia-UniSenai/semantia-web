@@ -4,6 +4,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import CaptionStage from '../components/live/CaptionStage.vue'
 import ChatPanel from '../components/live/ChatPanel.vue'
 import MicControl from '../components/live/MicControl.vue'
+import { useAudioInputDevices } from '../live/useAudioInputDevices'
 import { useLiveSession } from '../live/useLiveSession'
 import { useMeetingTranscription } from '../live/useMeetingTranscription'
 
@@ -17,7 +18,9 @@ const confirmingEnd = ref(false)
 const panel = ref<'chat' | 'participants'>('chat')
 const startedAt = Date.now()
 
+const audioInput = useAudioInputDevices()
 const transcription = useMeetingTranscription({
+  deviceId: audioInput.selectedDeviceId,
   onPartial: (text) => void live.publishPartial(text),
   onFinal: (text) => void live.publishFinal(text, Date.now() - startedAt),
 })
@@ -25,8 +28,25 @@ const transcription = useMeetingTranscription({
 const backTo = computed(() => '/app/salas')
 const myHand = computed(() => live.raisedHands.value.some((hand) => hand.participantId === live.currentParticipantId.value))
 
-onMounted(() => live.connect(sessionId.value, inviteToken.value))
-watch(() => live.ended.value, (ended) => { if (ended) transcription.stop() })
+onMounted(() => {
+  live.connect(sessionId.value, inviteToken.value)
+  void audioInput.refresh(false)
+})
+watch(() => live.ended.value, (ended) => {
+  if (ended) {
+    transcription.stop()
+    void audioInput.stopTest()
+  }
+})
+
+async function startTranscription() {
+  await audioInput.stopTest()
+  await transcription.start(audioInput.selectedDeviceId.value)
+}
+
+async function changeAudioInput(deviceId: string) {
+  await audioInput.selectDevice(deviceId)
+}
 
 async function copyInvite() {
   const token = live.session.value?.joinToken
@@ -43,11 +63,14 @@ async function end() {
     return
   }
   transcription.stop()
+  await audioInput.stopTest()
   await live.endSession()
   confirmingEnd.value = false
 }
 
 function leave() {
+  transcription.stop()
+  void audioInput.stopTest()
   live.disconnect()
   if (live.role.value === 'GUEST') router.push('/')
   else router.push(backTo.value)
@@ -92,9 +115,22 @@ function leave() {
             :local-engine="transcription.engine.value === 'local'"
             :input-state="transcription.inputState.value"
             :audio-level="transcription.audioLevel.value"
+            :transport="transcription.transport.value ?? undefined"
+            :has-hypothesis="transcription.hasHypothesis.value"
+            :audio-devices-supported="audioInput.supported"
+            :audio-devices="audioInput.devices.value"
+            :selected-device-id="audioInput.selectedDeviceId.value"
+            :audio-devices-loading="audioInput.loading.value"
+            :audio-device-error="audioInput.error.value"
+            :microphone-test-state="audioInput.testState.value"
+            :microphone-test-level="audioInput.testLevel.value"
             :disabled="live.ended.value"
-            @start="transcription.start"
+            @start="startTranscription"
             @stop="transcription.stop"
+            @refresh-audio-devices="audioInput.refresh"
+            @select-audio-device="changeAudioInput"
+            @start-microphone-test="audioInput.startTest"
+            @stop-microphone-test="audioInput.stopTest"
           />
           <button
             v-else-if="!live.ended.value"

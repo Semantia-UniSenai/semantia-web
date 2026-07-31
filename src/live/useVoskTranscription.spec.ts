@@ -84,6 +84,7 @@ const recognizer = {
   }),
   setWords: vi.fn(),
   acceptWaveform: vi.fn(),
+  acceptWaveformFloat: vi.fn(),
   retrieveFinalResult: vi.fn(),
   remove: vi.fn(),
 }
@@ -142,6 +143,7 @@ describe('useVoskTranscription', () => {
     expect(silentGain.gain.value).toBe(0)
     expect(transcription.listening.value).toBe(true)
     expect(transcription.loading.value).toBe(false)
+    expect(transcription.hasHypothesis.value).toBe(false)
 
     const inputBuffer = {
       getChannelData: () => new Float32Array([0.02, -0.24, 0.1]),
@@ -151,6 +153,7 @@ describe('useVoskTranscription', () => {
     expect(transcription.inputState.value).toBe('receiving')
 
     recognizerListeners.get('partialresult')?.({ result: { partial: 'fala parcial' } })
+    expect(transcription.hasHypothesis.value).toBe(true)
     recognizerListeners.get('result')?.({ result: { text: 'fala final' } })
     expect(onPartial).toHaveBeenCalledWith('fala parcial')
     expect(onFinal).toHaveBeenCalledWith('fala final')
@@ -162,6 +165,34 @@ describe('useVoskTranscription', () => {
     expect(processor.disconnect).toHaveBeenCalled()
     expect(contextClose).toHaveBeenCalled()
     expect(transcription.listening.value).toBe(false)
+  })
+
+  it('captures the selected audio input with an exact device constraint', async () => {
+    const transcription = useVoskTranscription({
+      onPartial: vi.fn(),
+      onFinal: vi.fn(),
+    })
+
+    await transcription.start('usb-headset')
+
+    expect(getUserMedia).toHaveBeenCalledWith({
+      audio: expect.objectContaining({ deviceId: { exact: 'usb-headset' } }),
+    })
+  })
+
+  it('uses the verified same-origin Portuguese model by default', async () => {
+    const transcription = useVoskTranscription({
+      onPartial: vi.fn(),
+      onFinal: vi.fn(),
+    })
+
+    await transcription.start()
+
+    expect(createModel).toHaveBeenCalledWith(
+      '/models/vosk-model-small-pt-0.3.model',
+      -1,
+    )
+    transcription.stop()
   })
 
   it('resumes the audio context again when model preparation suspends it', async () => {
@@ -219,6 +250,91 @@ describe('useVoskTranscription', () => {
     expect(workletDisconnect).toHaveBeenCalled()
     expect(workletPortClose).toHaveBeenCalled()
     expect(modelPortClose).toHaveBeenCalled()
+  })
+
+  it('switches to the compatible transport when audible frames produce no hypothesis', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode)
+    vi.stubGlobal('MessageChannel', FakeMessageChannel)
+    const transcription = useVoskTranscription({
+      onPartial: vi.fn(),
+      onFinal: vi.fn(),
+    })
+
+    await transcription.start()
+    expect(transcription.transport.value).toBe('direct')
+
+    workletMessageHandler?.({
+      data: { action: 'audio-level', peak: 0.32, frames: 12_000 },
+    } as MessageEvent)
+    await vi.advanceTimersByTimeAsync(8_000)
+
+    expect(transcription.listening.value).toBe(true)
+    expect(transcription.transport.value).toBe('switching')
+    expect(workletPortPostMessage).toHaveBeenCalledWith({
+      action: 'set-transport',
+      transport: 'main-thread',
+    })
+    expect(modelPortClose).toHaveBeenCalledTimes(1)
+
+    workletMessageHandler?.({
+      data: { action: 'transport-ready', transport: 'main-thread' },
+    } as MessageEvent)
+    expect(transcription.transport.value).toBe('compatible')
+
+    const samples = new Float32Array([0.03, -0.2, 0.1])
+    workletMessageHandler?.({
+      data: { action: 'audio-chunk', samples, sampleRate: 48_000 },
+    } as MessageEvent)
+    expect(recognizer.acceptWaveformFloat).toHaveBeenCalledWith(samples, 48_000)
+
+    transcription.stop()
+  })
+
+  it('fails observably when the worklet does not acknowledge the transport switch', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode)
+    vi.stubGlobal('MessageChannel', FakeMessageChannel)
+    const transcription = useVoskTranscription({
+      onPartial: vi.fn(),
+      onFinal: vi.fn(),
+    })
+
+    await transcription.start()
+    workletMessageHandler?.({
+      data: { action: 'audio-level', peak: 0.32, frames: 12_000 },
+    } as MessageEvent)
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(transcription.error.value).toBe('recognition-failed')
+    expect(transcription.listening.value).toBe(false)
+    expect(stopTrack).toHaveBeenCalledTimes(1)
+    expect(contextClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports no results after both transports receive audible audio without text', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode)
+    vi.stubGlobal('MessageChannel', FakeMessageChannel)
+    const transcription = useVoskTranscription({
+      onPartial: vi.fn(),
+      onFinal: vi.fn(),
+    })
+
+    await transcription.start()
+    workletMessageHandler?.({
+      data: { action: 'audio-level', peak: 0.32, frames: 12_000 },
+    } as MessageEvent)
+    await vi.advanceTimersByTimeAsync(8_000)
+    workletMessageHandler?.({
+      data: { action: 'transport-ready', transport: 'main-thread' },
+    } as MessageEvent)
+    await vi.advanceTimersByTimeAsync(12_000)
+
+    expect(transcription.error.value).toBe('recognition-no-results')
+    expect(transcription.listening.value).toBe(false)
+    expect(stopTrack).toHaveBeenCalledTimes(1)
+    expect(contextClose).toHaveBeenCalledTimes(1)
   })
 
   it('stops capture and reports a stalled pipeline when no audio frame arrives', async () => {
