@@ -91,36 +91,41 @@ describe('CaptionStage', () => {
     expect(wrapper.find('.captions__line--partial').text()).toBe('oi tur')
   })
 
-  // NOTA: os testes de fonte semeiam o localStorage antes de montar por causa
-  // de um BUG conhecido no onMounted do componente: sem valor salvo,
-  // Number(localStorage.getItem(...)) = Number(null) = 0 passa na validação e
-  // reseta a fonte para o menor passo (22px) em vez de manter o default (34px).
+  it('sem preferência salva mantém o tamanho padrão de 36px', async () => {
+    const wrapper = mountStage()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.captions__stage').attributes('style')).toContain(
+      'font-size: 36px',
+    )
+  })
+
   it('A+ e A− mudam o font-size do palco e persistem no localStorage', async () => {
-    localStorage.setItem(FONT_KEY, '2') // passo default explícito (34px)
+    localStorage.setItem(FONT_KEY, '1')
     const wrapper = mountStage()
     await wrapper.vm.$nextTick()
 
     const stage = wrapper.find('.captions__stage')
     const [minus, plus] = wrapper.findAll('.captions__font button')
-    expect(stage.attributes('style')).toContain('font-size: 34px')
+    expect(stage.attributes('style')).toContain('font-size: 36px')
 
     await plus!.trigger('click')
-    expect(stage.attributes('style')).toContain('font-size: 42px')
-    expect(localStorage.getItem(FONT_KEY)).toBe('3')
+    expect(stage.attributes('style')).toContain('font-size: 48px')
+    expect(localStorage.getItem(FONT_KEY)).toBe('2')
 
     await minus!.trigger('click')
     await minus!.trigger('click')
     expect(stage.attributes('style')).toContain('font-size: 28px')
-    expect(localStorage.getItem(FONT_KEY)).toBe('1')
+    expect(localStorage.getItem(FONT_KEY)).toBe('0')
   })
 
   it('restaura o tamanho salvo do localStorage e desabilita A+ no máximo', async () => {
-    localStorage.setItem(FONT_KEY, '4')
+    localStorage.setItem(FONT_KEY, '2')
     const wrapper = mountStage()
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('.captions__stage').attributes('style')).toContain(
-      'font-size: 52px',
+      'font-size: 48px',
     )
     const [minus, plus] = wrapper.findAll('.captions__font button')
     expect(plus!.attributes('disabled')).toBeDefined()
@@ -129,7 +134,7 @@ describe('CaptionStage', () => {
     // No teto, A+ não passa do último passo.
     await plus!.trigger('click')
     expect(wrapper.find('.captions__stage').attributes('style')).toContain(
-      'font-size: 52px',
+      'font-size: 48px',
     )
   })
 
@@ -140,13 +145,13 @@ describe('CaptionStage', () => {
 
     const [minus] = wrapper.findAll('.captions__font button')
     expect(wrapper.find('.captions__stage').attributes('style')).toContain(
-      'font-size: 22px',
+      'font-size: 28px',
     )
     expect(minus!.attributes('disabled')).toBeDefined()
 
     await minus!.trigger('click')
     expect(wrapper.find('.captions__stage').attributes('style')).toContain(
-      'font-size: 22px',
+      'font-size: 28px',
     )
     expect(localStorage.getItem(FONT_KEY)).toBe('0')
   })
@@ -157,7 +162,7 @@ describe('CaptionStage', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.find('.captions__stage').attributes('style')).toContain(
-      'font-size: 34px',
+      'font-size: 36px',
     )
   })
 
@@ -167,5 +172,26 @@ describe('CaptionStage', () => {
     expect(wrapper.find('.captions__stage').attributes('style')).toContain(
       'font-size: 18px',
     )
+  })
+
+  it('distingue transcrição pausada de disponibilidade da legenda', () => {
+    const wrapper = mountStage({ captionState: 'paused' })
+
+    expect(wrapper.get('[data-testid="caption-status"]').text()).toContain(
+      'Transcrição pausada',
+    )
+    expect(wrapper.text()).not.toContain('Transcrição ao vivo')
+  })
+
+  it('anuncia somente a frase final mais recente fora do histórico navegável', () => {
+    const wrapper = mountStage({
+      transcript: [entry(1, 'Primeira frase.'), entry(2, 'Segunda frase.')],
+      partialText: 'terceira em formação',
+    })
+
+    const announcer = wrapper.get('[data-testid="caption-announcer"]')
+    expect(announcer.attributes('aria-live')).toBe('polite')
+    expect(announcer.text()).toBe('Segunda frase.')
+    expect(wrapper.get('.captions__stage').attributes('aria-live')).toBeUndefined()
   })
 })
