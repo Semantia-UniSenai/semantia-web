@@ -1,449 +1,352 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter, RouterLink } from 'vue-router'
-import FingerspellingGame from '../components/FingerspellingGame.vue'
-import { submitScore, useGetRanking } from '../api/generated/games/games'
-import { createSession } from '../api/generated/sessions/sessions'
+import { RouterLink, useRouter } from 'vue-router'
+import { createMeeting } from '../api/generated/rooms/rooms'
+import RoomsHeader from '../components/rooms/RoomsHeader.vue'
 import { useAuth } from '../stores/auth'
 
 const router = useRouter()
-const { user, isProfessor, logout } = useAuth()
+const { user } = useAuth()
+const invite = ref('')
+const error = ref('')
+const creating = ref(false)
 
-// ── Aula ao vivo ─────────────────────────────────────────────────────────
-const startingLive = ref(false)
-const liveError = ref('')
-
-async function startQuickSession() {
-  startingLive.value = true
-  liveError.value = ''
+async function openMeeting() {
+  creating.value = true
+  error.value = ''
   try {
-    const today = new Date().toLocaleDateString('pt-BR')
-    const session = await createSession({ title: `Aula de ${today}` })
-    router.push(`/app/aula/${session.id}`)
+    const meeting = await createMeeting({})
+    await router.push(`/sala/${meeting.meetingId}`)
   } catch {
-    liveError.value = 'Não foi possível iniciar a aula. Tente de novo.'
+    error.value = 'Não foi possível abrir a reunião.'
   } finally {
-    startingLive.value = false
+    creating.value = false
   }
 }
-
-const invite = ref('')
-const inviteError = ref('')
 
 function openInvite() {
-  inviteError.value = ''
-  const raw = invite.value.trim()
-  if (!raw) return
-  // Aceita o link completo de convite (aula ou turma) ou o código da turma.
-  const asPath = raw.match(/\/(aula|turma)\/convite\/[\w-]+/)?.[0]
-  if (asPath) {
-    router.push(asPath)
-    return
-  }
-  if (/^[\w-]{4,24}$/.test(raw)) {
-    router.push(`/turma/convite/${raw}`)
-    return
-  }
-  inviteError.value = 'Cole o link de convite ou digite o código da turma.'
-}
-
-const GAME_KEY = 'fingerspelling'
-const { data: ranking, refetch, isFetching } = useGetRanking({ gameKey: GAME_KEY, limit: 20 })
-
-const lastPoints = ref<number | null>(null)
-const saving = ref(false)
-
-async function onFinish(result: { points: number; accuracy: number; durationMs: number }) {
-  lastPoints.value = result.points
-  saving.value = true
-  try {
-    await submitScore({ gameKey: GAME_KEY, ...result })
-    await refetch()
-  } finally {
-    saving.value = false
-  }
-}
-
-function onLogout() {
-  logout()
-  router.push('/')
+  const value = invite.value.trim()
+  const token =
+    value.match(/\/convite\/(?:reuniao|sessao)\/([\w-]+)/)?.[1] ??
+    (/^[\w-]{16,}$/.test(value) ? value : '')
+  if (token) return router.push(`/convite/reuniao/${token}`)
+  error.value = 'Cole um link ou código de convite válido.'
 }
 </script>
 
 <template>
-  <div class="app">
-    <header class="bar">
-      <RouterLink class="brand" to="/">
-        <img src="/brand/semantia-mark.png" alt="" width="30" height="32" />
-        <span>Semantia</span>
-      </RouterLink>
-      <div class="who">
-        <span class="hi">Olá, <strong>{{ user?.name }}</strong></span>
-        <button class="logout" type="button" @click="onLogout">Sair</button>
-      </div>
-    </header>
-
-    <section class="livehub">
-      <div class="livehub__copy">
-        <h2>Aula ao vivo</h2>
-        <p v-if="isProfessor">
-          Dê sua aula falando normalmente — os alunos acompanham tudo em texto,
-          em tempo real.
-        </p>
-        <p v-else>
-          Acompanhe a fala do professor em legendas ao vivo, levante a mão e
-          tire dúvidas pelo chat.
-        </p>
-      </div>
-
-      <div class="livehub__acts">
-        <template v-if="isProfessor">
-          <button
-            type="button"
-            class="livehub__primary"
-            :disabled="startingLive"
-            @click="startQuickSession"
-          >
-            {{ startingLive ? 'Criando sala…' : 'Iniciar aula agora' }}
-          </button>
-          <RouterLink class="livehub__secondary" to="/app/turmas">
-            Minhas turmas
-          </RouterLink>
-        </template>
-
-        <template v-else>
-          <form class="livehub__join" @submit.prevent="openInvite">
-            <label class="sr-only" for="invite-input">Link ou código de convite</label>
-            <input
-              id="invite-input"
-              v-model="invite"
-              type="text"
-              placeholder="Cole o link da aula ou o código da turma"
-            />
-            <button type="submit">Entrar</button>
-          </form>
-          <RouterLink class="livehub__secondary" to="/app/turmas">
-            Minhas turmas
-          </RouterLink>
-        </template>
-      </div>
-      <p v-if="liveError || inviteError" class="livehub__err" role="alert">
-        {{ liveError || inviteError }}
-      </p>
-    </section>
-
-    <main class="grid">
-      <section class="panel">
-        <div class="panel__head">
-          <h1>Treino de Datilologia</h1>
-          <p>Reconheça a letra soletrada em Libras. Cada acerto vale pontos — e te coloca no ranking.</p>
+  <div class="page">
+    <RoomsHeader />
+    <main class="wrap">
+      <section class="hero">
+        <div class="hero__copy">
+          <p class="eyebrow">Olá, {{ user?.name }}</p>
+          <h1>Comunicação ao vivo que também pode ser lida.</h1>
+          <p>
+            Abra uma reunião instantânea, compartilhe o link e ofereça transcrição acessível em
+            tempo real sem armazenar o áudio.
+          </p>
+          <div class="hero__actions">
+            <button class="primary" type="button" :disabled="creating" @click="openMeeting">
+              {{ creating ? 'Abrindo…' : 'Nova reunião' }}
+            </button>
+            <RouterLink class="secondary" to="/app/salas">Minhas reuniões</RouterLink>
+            <a class="secondary" href="#invite">Tenho um convite</a>
+          </div>
         </div>
-        <FingerspellingGame @finish="onFinish" />
-        <p v-if="saving" class="saving">Salvando pontuação…</p>
-        <p v-else-if="lastPoints !== null" class="saved">Pontuação enviada: {{ lastPoints }} pts ✓</p>
+        <aside class="caption-preview" aria-label="Exemplo de transcrição">
+          <span><i></i> Transcrição ao vivo</span>
+          <p>“A próxima decisão é validar o fluxo com toda a equipe.”</p>
+          <footer>Texto em tempo real • ajustável • pesquisável</footer>
+        </aside>
       </section>
 
-      <aside class="panel rank">
-        <div class="panel__head">
-          <h2>Ranking 🏆</h2>
-          <p>Melhores pontuações. {{ isFetching ? 'atualizando…' : '' }}</p>
+      <section class="features" aria-label="Recursos principais">
+        <article>
+          <span>01</span>
+          <h2>Reunião instantânea</h2>
+          <p>Um clique abre a reunião ao vivo, sem telas de configuração ou espera.</p>
+        </article>
+        <article>
+          <span>02</span>
+          <h2>Convite sem conta</h2>
+          <p>A pessoa convidada entra pelo link com uma identidade temporária segura.</p>
+        </article>
+        <article>
+          <span>03</span>
+          <h2>Transcrição preservada</h2>
+          <p>Ao encerrar, o conteúdo permanece disponível em modo somente leitura.</p>
+        </article>
+      </section>
+
+      <section id="invite" class="invite">
+        <div class="invite__copy">
+          <p class="eyebrow">Acesso rápido</p>
+          <h2>Entre em uma reunião</h2>
+          <p>Cole o link completo ou somente o código recebido do anfitrião.</p>
+          <small>Você poderá informar seu nome antes de entrar.</small>
         </div>
-        <ol class="list">
-          <li
-            v-for="row in ranking"
-            :key="row.userId"
-            :class="{ me: row.userId === user?.id }"
-          >
-            <span class="pos">{{ row.rank }}</span>
-            <span class="name">{{ row.name }}<em v-if="row.userId === user?.id"> (você)</em></span>
-            <span class="score">{{ row.points }}</span>
-          </li>
-          <li v-if="!ranking || ranking.length === 0" class="empty">
-            Ninguém pontuou ainda. Seja o primeiro!
-          </li>
-        </ol>
-      </aside>
+        <form class="invite__form" aria-label="Entrar com convite" @submit.prevent="openInvite">
+          <label for="meeting-invite">Link ou código da reunião</label>
+          <input
+            id="meeting-invite"
+            v-model="invite"
+            name="meeting-invite"
+            type="text"
+            inputmode="url"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Cole o link ou código do convite"
+          />
+          <button type="submit">
+            Entrar na reunião
+            <span aria-hidden="true">→</span>
+          </button>
+          <p v-if="error" class="error" role="alert">{{ error }}</p>
+        </form>
+      </section>
     </main>
   </div>
 </template>
 
 <style scoped>
-.app {
+.page {
   min-height: 100svh;
-  background: radial-gradient(70% 40% at 50% 0%, rgba(91, 134, 212, 0.08), transparent 70%), var(--bg);
+  background: var(--bg);
 }
-.bar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 64px;
-  padding: 0 22px;
-  background: rgba(243, 245, 250, 0.8);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--line);
+.wrap {
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 52px 0 82px;
 }
-.brand {
-  display: inline-flex;
+.hero {
+  display: grid;
+  grid-template-columns: 1.08fr 0.92fr;
+  gap: 48px;
   align-items: center;
-  gap: 9px;
-  text-decoration: none;
-  font-family: var(--display);
+  min-height: 470px;
+}
+.eyebrow {
+  margin: 0 0 10px;
+  color: var(--brand);
+  font-size: 12px;
   font-weight: 800;
-  font-size: 19px;
-  color: var(--ink);
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
 }
-.who {
+.hero h1 {
+  max-width: 720px;
+  margin: 0;
+  font: 800 clamp(42px, 6vw, 74px) / 0.98 var(--display);
+  letter-spacing: -0.04em;
+}
+.hero__copy > p:not(.eyebrow) {
+  max-width: 650px;
+  margin: 24px 0;
+  color: var(--ink-soft);
+  font-size: 18px;
+  line-height: 1.65;
+}
+.hero__actions {
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-wrap: wrap;
+  gap: 10px;
 }
-.hi {
-  font-size: 14.5px;
-  color: var(--ink-soft);
+.primary,
+.secondary {
+  padding: 13px 17px;
+  border-radius: 12px;
+  font: 700 14px var(--display);
+  text-decoration: none;
 }
-.logout {
-  padding: 8px 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  font: inherit;
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--ink-soft);
+.primary {
+  border: 0;
+  background: var(--brand);
+  color: white;
+  box-shadow: var(--shadow-brand);
   cursor: pointer;
 }
-.logout:hover {
+.primary:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.secondary {
+  border: 1px solid var(--line);
+  background: var(--surface);
   color: var(--ink);
-  border-color: var(--brand);
 }
-/* ── Aula ao vivo (hub) ─────────────────────────────────────────── */
-.livehub {
-  max-width: 1080px;
-  margin: 26px auto 0;
-  padding: 26px 28px;
-  border-radius: var(--radius);
-  background:
-    radial-gradient(120% 180% at 100% 0%, rgba(146, 119, 207, 0.28), transparent 55%),
-    radial-gradient(120% 180% at 0% 100%, rgba(79, 179, 191, 0.22), transparent 55%),
-    var(--night);
-  border: 1px solid var(--night-line);
+.caption-preview {
+  padding: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 24px;
+  background: linear-gradient(145deg, #171e33, #2a3657);
+  box-shadow: 0 28px 70px rgba(21, 30, 52, 0.25);
+  color: white;
+}
+.caption-preview > span {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  flex-wrap: wrap;
-  width: calc(100% - 40px);
+  gap: 8px;
+  color: #a9e7ca;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
 }
-.livehub__copy h2 {
-  margin: 0 0 4px;
-  font-family: var(--display);
-  font-size: 24px;
-  color: #fff;
+.caption-preview i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #46d795;
 }
-.livehub__copy p {
+.caption-preview p {
+  margin: 50px 0;
+  font: 700 clamp(27px, 4vw, 42px) / 1.25 var(--display);
+}
+.caption-preview footer {
+  color: #aeb8d1;
+  font-size: 12px;
+}
+.features {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin: 24px 0 72px;
+}
+.features article {
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+}
+.features span {
+  color: var(--brand);
+  font: 800 12px var(--display);
+}
+.features h2 {
+  margin: 18px 0 8px;
+  font-size: 20px;
+}
+.features p {
   margin: 0;
-  max-width: 460px;
-  font-size: 14.5px;
-  color: var(--on-night);
+  color: var(--muted);
+  line-height: 1.55;
 }
-.livehub__acts {
-  display: flex;
+.invite {
+  display: grid;
+  grid-template-columns: minmax(0, 0.88fr) minmax(380px, 1.12fr);
+  gap: 48px;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+  padding: 36px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--surface);
+  box-shadow: 0 20px 55px rgba(24, 32, 54, 0.07);
 }
-.livehub__primary {
-  padding: 13px 24px;
-  border: none;
+.invite h2 {
+  margin: 0 0 10px;
+  font-size: clamp(25px, 3vw, 34px);
+  letter-spacing: -0.025em;
+}
+.invite__copy > p:not(.eyebrow) {
+  margin: 0 0 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.invite__copy small {
+  color: var(--ink-soft);
+}
+.invite__form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+.invite__form label {
+  grid-column: 1 / -1;
+  color: var(--ink);
+  font: 800 13px var(--display);
+}
+.invite__form input {
+  min-width: 0;
+  height: 52px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  outline: none;
+  background: var(--bg);
+  color: var(--ink);
+  font: 500 15px var(--display);
+}
+.invite__form input::placeholder {
+  color: var(--muted);
+}
+.invite__form input:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
+}
+.invite__form button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  height: 52px;
+  padding: 0 20px;
+  border: 0;
   border-radius: 13px;
   background: var(--brand);
-  color: #fff;
-  font: inherit;
-  font-weight: 700;
-  font-size: 15px;
+  color: white;
+  font: 800 14px var(--display);
+  white-space: nowrap;
   cursor: pointer;
   box-shadow: var(--shadow-brand);
 }
-.livehub__primary:disabled {
-  opacity: 0.6;
-  cursor: progress;
+.invite__form button span {
+  font-size: 18px;
 }
-.livehub__secondary {
-  padding: 12px 20px;
-  border: 1px solid var(--night-line);
-  border-radius: 13px;
-  color: #fff;
+.error {
+  grid-column: 1 / -1;
+  margin: 2px 0 0;
+  color: #a43a52;
   font-weight: 700;
-  font-size: 14.5px;
-  text-decoration: none;
-  background: rgba(255, 255, 255, 0.06);
+  font-size: 13px;
 }
-.livehub__secondary:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-.livehub__join {
-  display: flex;
-  gap: 8px;
-}
-.livehub__join input {
-  width: min(330px, 60vw);
-  padding: 12px 14px;
-  border: 1px solid var(--night-line);
-  border-radius: 13px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  font: inherit;
-  font-size: 14px;
-}
-.livehub__join input::placeholder {
-  color: rgba(199, 206, 221, 0.7);
-}
-.livehub__join button {
-  padding: 12px 20px;
-  border: none;
-  border-radius: 13px;
-  background: var(--brand);
-  color: #fff;
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
-.livehub__err {
-  width: 100%;
-  margin: 0;
-  font-size: 13.5px;
-  font-weight: 600;
-  color: #ffb2c1;
-}
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-@media (max-width: 640px) {
-  .livehub {
-    width: calc(100% - 24px);
-    padding: 20px;
+@media (max-width: 820px) {
+  .wrap {
+    padding-top: 24px;
   }
-  .livehub__acts,
-  .livehub__join {
-    width: 100%;
+  .hero {
+    grid-template-columns: 1fr;
+    min-height: auto;
   }
-  .livehub__join {
-    flex-direction: column;
+  .hero h1 {
+    font-size: clamp(40px, 11vw, 60px);
   }
-  .livehub__join input {
-    width: 100%;
+  .features {
+    grid-template-columns: 1fr;
+    margin-top: 54px;
   }
-  .livehub__primary,
-  .livehub__secondary,
-  .livehub__join button {
-    width: 100%;
+  .invite {
+    grid-template-columns: 1fr;
+    gap: 24px;
+    padding: 24px;
+  }
+}
+@media (max-width: 520px) {
+  .hero__actions > * {
+    flex: 1 1 auto;
     text-align: center;
   }
-}
-
-.grid {
-  max-width: 1080px;
-  margin: 0 auto;
-  padding: 28px 20px 60px;
-  display: grid;
-  grid-template-columns: 1.6fr 1fr;
-  gap: 22px;
-  align-items: start;
-}
-.panel {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  padding: 24px;
-  box-shadow: var(--shadow-sm);
-}
-.panel__head {
-  margin-bottom: 18px;
-}
-.panel__head h1 {
-  font-size: 24px;
-  font-weight: 800;
-}
-.panel__head h2 {
-  font-size: 20px;
-  font-weight: 800;
-}
-.panel__head p {
-  margin-top: 6px;
-  font-size: 14px;
-  color: var(--ink-soft);
-}
-.saving,
-.saved {
-  margin-top: 14px;
-  font-size: 14px;
-  font-weight: 600;
-}
-.saved {
-  color: #1f9d55;
-}
-.list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.list li {
-  display: grid;
-  grid-template-columns: 32px 1fr auto;
-  align-items: center;
-  gap: 10px;
-  padding: 11px 12px;
-  border-radius: 11px;
-  background: var(--bg);
-  font-size: 14.5px;
-}
-.list li.me {
-  background: linear-gradient(90deg, rgba(91, 134, 212, 0.16), rgba(146, 119, 207, 0.12));
-  outline: 1px solid var(--brand);
-}
-.pos {
-  font-family: var(--display);
-  font-weight: 800;
-  color: var(--ink-soft);
-  text-align: center;
-}
-.name {
-  font-weight: 600;
-  color: var(--ink);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.name em {
-  color: var(--brand);
-  font-style: normal;
-  font-weight: 700;
-}
-.score {
-  font-family: var(--display);
-  font-weight: 800;
-  color: var(--brand);
-}
-.empty {
-  color: var(--muted);
-  justify-content: center;
-  text-align: center;
-}
-
-@media (max-width: 820px) {
-  .grid {
+  .caption-preview {
+    padding: 22px;
+  }
+  .caption-preview p {
+    margin: 34px 0;
+  }
+  .invite__form {
     grid-template-columns: 1fr;
+  }
+  .invite__form button {
+    width: 100%;
   }
 }
 </style>

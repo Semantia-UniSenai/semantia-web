@@ -5,7 +5,10 @@
   "type": "module",
   "packageManager": "pnpm@10.22.0",
   "scripts": {
+    "model:prepare": "node scripts/ensure-vosk-model.mjs",
+    "predev": "pnpm model:prepare",
     "dev": "vite",
+    "prebuild": "pnpm model:prepare",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
@@ -20,6 +23,7 @@
     "@vue-a11y/vlibras": "^1.0.6",
     "axios": "^1.18.1",
     "socket.io-client": "^4.8.3",
+    "vosk-browser": "0.0.8",
     "vue": "^3.5.34",
     "vue-router": "^5.1.0"
   },

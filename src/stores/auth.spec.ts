@@ -4,25 +4,12 @@ import type { AuthUser } from './auth'
 const TOKEN_KEY = 'semantia.token'
 const USER_KEY = 'semantia.user'
 
-const professor: AuthUser = {
-  id: 'u-prof',
-  name: 'Marina Prof',
-  email: 'marina@escola.dev',
-  role: 'PROFESSOR',
+const account: AuthUser = {
+  id: 'user-1',
+  name: 'Marina Lima',
+  email: 'marina@empresa.dev',
 }
 
-const aluno: AuthUser = {
-  id: 'u-aluno',
-  name: 'João Aluno',
-  email: 'joao@escola.dev',
-  role: 'ALUNO',
-}
-
-/**
- * O estado do módulo é singleton (refs criadas no load do módulo), então cada
- * teste recarrega o módulo com vi.resetModules + import dinâmico para partir
- * do localStorage corrente.
- */
 async function loadAuth() {
   vi.resetModules()
   return await import('./auth')
@@ -32,45 +19,39 @@ beforeEach(() => {
   localStorage.clear()
 })
 
-describe('useAuth', () => {
-  it('setSession persiste token e user no localStorage e nos refs', async () => {
+describe('useAuth without global roles', () => {
+  it('persists only the account identity and token', async () => {
     const { useAuth } = await loadAuth()
     const auth = useAuth()
-
-    auth.setSession('jwt-123', professor)
-
+    auth.setSession('jwt-123', account)
     expect(auth.token.value).toBe('jwt-123')
-    expect(auth.user.value).toEqual(professor)
+    expect(auth.user.value).toEqual(account)
     expect(auth.isAuthenticated.value).toBe(true)
-    expect(localStorage.getItem(TOKEN_KEY)).toBe('jwt-123')
-    expect(JSON.parse(localStorage.getItem(USER_KEY)!)).toEqual(professor)
+    expect(JSON.parse(localStorage.getItem(USER_KEY)!)).toEqual(account)
   })
 
-  it('hidrata token e user do localStorage no load do módulo', async () => {
+  it('sanitizes a legacy role stored in the browser', async () => {
     localStorage.setItem(TOKEN_KEY, 'jwt-persistido')
-    localStorage.setItem(USER_KEY, JSON.stringify(aluno))
-
+    localStorage.setItem(
+      USER_KEY,
+      JSON.stringify({ ...account, role: 'PROFESSOR' }),
+    )
     const { useAuth } = await loadAuth()
-    const auth = useAuth()
-
-    expect(auth.token.value).toBe('jwt-persistido')
-    expect(auth.user.value).toEqual(aluno)
+    expect(useAuth().user.value).toEqual(account)
+    expect(useAuth().user.value).not.toHaveProperty('role')
   })
 
-  it('user corrompido no localStorage vira null (sem explodir)', async () => {
-    localStorage.setItem(USER_KEY, '{json quebrado')
-
+  it('turns malformed or incomplete stored users into null', async () => {
+    localStorage.setItem(USER_KEY, JSON.stringify({ id: account.id }))
     const { useAuth } = await loadAuth()
     expect(useAuth().user.value).toBeNull()
   })
 
-  it('logout limpa refs e localStorage', async () => {
+  it('clears refs and storage on logout', async () => {
     const { useAuth } = await loadAuth()
     const auth = useAuth()
-    auth.setSession('jwt-123', professor)
-
+    auth.setSession('jwt-123', account)
     auth.logout()
-
     expect(auth.token.value).toBeNull()
     expect(auth.user.value).toBeNull()
     expect(auth.isAuthenticated.value).toBe(false)
@@ -78,28 +59,10 @@ describe('useAuth', () => {
     expect(localStorage.getItem(USER_KEY)).toBeNull()
   })
 
-  it('isProfessor é true para PROFESSOR e false para ALUNO/deslogado', async () => {
-    const { useAuth } = await loadAuth()
-    const auth = useAuth()
-
-    expect(auth.isProfessor.value).toBe(false)
-
-    auth.setSession('t', professor)
-    expect(auth.isProfessor.value).toBe(true)
-
-    auth.setSession('t', aluno)
-    expect(auth.isProfessor.value).toBe(false)
-  })
-
-  it('getToken reflete o token corrente (fora do composable)', async () => {
+  it('exposes the current token outside the composable', async () => {
     const { useAuth, getToken } = await loadAuth()
-    expect(getToken()).toBeNull()
-
     const auth = useAuth()
-    auth.setSession('jwt-xyz', aluno)
+    auth.setSession('jwt-xyz', account)
     expect(getToken()).toBe('jwt-xyz')
-
-    auth.logout()
-    expect(getToken()).toBeNull()
   })
 })

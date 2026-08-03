@@ -4,16 +4,16 @@ import { splitIntoLines } from '../../live/captionLines'
 import type { TranscriptEntry } from '../../live/types'
 
 /**
- * Palco de legendas ao vivo — o coração da experiência do aluno surdo.
+ * Palco de texto ao vivo — o coração da experiência acessível da plateia.
  * Estilo karaokê: cada frase vira uma ou mais linhas curtas que descem na
- * tela; a linha corrente fica em destaque e as anteriores esmaecem. O aluno
+ * tela; a linha corrente fica em destaque e as anteriores esmaecem. A pessoa
  * pode rolar de volta pra reler — a rolagem só fica presa ao vivo quando ele
  * está no fim.
  */
 const props = defineProps<{
   transcript: TranscriptEntry[]
   partialText: string
-  /** Modo compacto (preview do professor). */
+  /** Modo compacto (preview do comunicador). */
   compact?: boolean
 }>()
 
@@ -82,7 +82,7 @@ watch(
   <section
     class="captions"
     :class="{ compact }"
-    aria-label="Transcrição ao vivo da aula"
+    aria-label="Transcrição ao vivo da reunião"
   >
     <div class="captions__tools" v-if="!compact">
       <span class="captions__label">
@@ -118,7 +118,7 @@ watch(
       @scroll.passive="onScroll"
     >
       <p v-if="lines.length === 0 && !partialText" class="captions__waiting">
-        Aguardando o professor falar…
+        Aguardando o comunicador falar…
       </p>
       <template v-else>
         <transition-group name="line" tag="div" class="captions__lines">

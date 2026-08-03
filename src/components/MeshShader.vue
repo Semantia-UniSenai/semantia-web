@@ -22,30 +22,37 @@ let mount: ShaderMount | null = null
 
 onMounted(() => {
   if (!el.value) return
+  const probe = document.createElement('canvas')
+  if (!probe.getContext('webgl2') && !probe.getContext('webgl')) return
+
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  mount = new ShaderMount(
-    el.value,
-    meshGradientFragmentShader,
-    {
-      u_colors: props.colors.map((c) => getShaderColorFromString(c)),
-      u_colorsCount: props.colors.length,
-      u_distortion: props.distortion,
-      u_swirl: props.swirl,
-      u_grainMixer: 0,
-      u_grainOverlay: 0,
-      u_fit: ShaderFitOptions.cover,
-      u_scale: 1,
-      u_rotation: 0,
-      u_offsetX: 0,
-      u_offsetY: 0,
-      u_originX: 0.5,
-      u_originY: 0.5,
-      u_worldWidth: 0,
-      u_worldHeight: 0,
-    },
-    undefined,
-    reduce ? 0 : props.speed,
-  )
+  try {
+    mount = new ShaderMount(
+      el.value,
+      meshGradientFragmentShader,
+      {
+        u_colors: props.colors.map((c) => getShaderColorFromString(c)),
+        u_colorsCount: props.colors.length,
+        u_distortion: props.distortion,
+        u_swirl: props.swirl,
+        u_grainMixer: 0,
+        u_grainOverlay: 0,
+        u_fit: ShaderFitOptions.cover,
+        u_scale: 1,
+        u_rotation: 0,
+        u_offsetX: 0,
+        u_offsetY: 0,
+        u_originX: 0.5,
+        u_originY: 0.5,
+        u_worldWidth: 0,
+        u_worldHeight: 0,
+      },
+      undefined,
+      reduce ? 0 : props.speed,
+    )
+  } catch {
+    mount = null
+  }
 })
 
 onBeforeUnmount(() => mount?.dispose())
