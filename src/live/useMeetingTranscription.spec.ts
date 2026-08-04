@@ -28,6 +28,8 @@ function mockEngines(browserSupported: boolean) {
   const qualityProgress = ref(100)
   const qualityError = ref<string | null>(null)
   const qualityInferenceMs = ref<number | null>(null)
+  const backendStatus = ref<'idle' | 'ready' | 'processing' | 'error'>('ready')
+  const backendError = ref<string | null>(null)
   const speechStart = vi.fn().mockResolvedValue(true)
   const speechStop = vi.fn()
   const localStart = vi.fn()
@@ -47,6 +49,14 @@ function mockEngines(browserSupported: boolean) {
       reason: 'test-fallback',
     }),
   )
+  const backendStart = vi.fn()
+  const backendStop = vi.fn()
+  const backendAddAudio = vi.fn()
+  const backendFinalize = vi.fn().mockResolvedValue({
+    accepted: true,
+    durationMs: 1_000,
+  })
+  let backendPublish: ((segment: unknown) => Promise<{ ok: boolean }>) | undefined
   let speechCallbacks: EngineCallbacks | undefined
   let localCallbacks: LocalEngineCallbacks | undefined
 
@@ -92,6 +102,22 @@ function mockEngines(browserSupported: boolean) {
       finalizeSegment: qualityFinalize,
     })),
   }))
+  vi.doMock('./useBackendAudioFinalizer', () => ({
+    useBackendAudioFinalizer: vi.fn(
+      (options: { publish: (segment: unknown) => Promise<{ ok: boolean }> }) => {
+        backendPublish = options.publish
+        return {
+          status: backendStatus,
+          error: backendError,
+          bufferedSeconds: ref(0),
+          start: backendStart,
+          stop: backendStop,
+          addAudioChunk: backendAddAudio,
+          finalizeSegment: backendFinalize,
+        }
+      },
+    ),
+  }))
 
   return {
     speechError,
@@ -110,6 +136,11 @@ function mockEngines(browserSupported: boolean) {
     qualityStop,
     qualityAddAudio,
     qualityFinalize,
+    backendStart,
+    backendStop,
+    backendAddAudio,
+    backendFinalize,
+    publishBackendAudio: (segment: unknown) => backendPublish?.(segment),
     emitSpeechPartial: (text: string) => speechCallbacks?.onPartial(text),
     emitSpeechFinal: (text: string) => speechCallbacks?.onFinal(text),
     emitLocalPartial: (text: string) => localCallbacks?.onPartial(text),
@@ -120,6 +151,31 @@ function mockEngines(browserSupported: boolean) {
 }
 
 describe('useMeetingTranscription', () => {
+  it('forces audio capture and delegates the final to backend ASR', async () => {
+    const engines = mockEngines(true)
+    const onFinal = vi.fn()
+    const onAudioSegment = vi.fn().mockResolvedValue({ ok: true })
+    const { useMeetingTranscription } = await import('./useMeetingTranscription')
+    const transcription = useMeetingTranscription({
+      onPartial: vi.fn(),
+      onFinal,
+      onAudioSegment,
+    })
+
+    await transcription.start('default')
+    const pcm = new Float32Array([0.1, 0.2])
+    engines.emitLocalAudio(pcm, 48_000)
+    engines.emitLocalFinal('hipótese Vosk')
+    await vi.waitFor(() => expect(engines.backendFinalize).toHaveBeenCalledTimes(1))
+
+    expect(engines.speechStart).not.toHaveBeenCalled()
+    expect(engines.localStart).toHaveBeenCalledWith('default')
+    expect(engines.backendStart).toHaveBeenCalledTimes(1)
+    expect(engines.backendAddAudio).toHaveBeenCalledWith(pcm, 48_000)
+    expect(engines.qualityFinalize).not.toHaveBeenCalled()
+    expect(onFinal).not.toHaveBeenCalled()
+  })
+
   it('throttles changed partials and cancels the pending value on stop', async () => {
     vi.useFakeTimers()
     const engines = mockEngines(true)

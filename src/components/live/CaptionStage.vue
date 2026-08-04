@@ -14,6 +14,7 @@ const props = defineProps<{
   transcript: TranscriptEntry[]
   partialText: string
   captionState?: 'available' | 'paused' | 'preparing' | 'listening' | 'reconnecting' | 'ended'
+  backendAsr?: boolean
   /** Modo compacto (preview do comunicador). */
   compact?: boolean
 }>()
@@ -23,9 +24,19 @@ const captionStatus = computed(() => {
     case 'paused':
       return { label: 'Transcrição pausada', detail: 'A legenda continua disponível para leitura.' }
     case 'preparing':
-      return { label: 'Preparando transcrição', detail: 'Carregando o reconhecimento local neste navegador.' }
+      return {
+        label: 'Preparando transcrição',
+        detail: props.backendAsr
+          ? 'Preparando a captura local e a confirmação final pelo servidor.'
+          : 'Carregando o reconhecimento local neste navegador.',
+      }
     case 'listening':
-      return { label: 'Transcrição ativa', detail: 'O áudio é processado somente neste navegador.' }
+      return {
+        label: 'Transcrição ativa',
+        detail: props.backendAsr
+          ? 'A prévia é local; o servidor processa e confirma o texto final.'
+          : 'O áudio é processado somente neste navegador.',
+      }
     case 'reconnecting':
       return { label: 'Reconectando', detail: 'A última legenda permanece disponível.' }
     case 'ended':

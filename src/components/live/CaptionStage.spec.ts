@@ -183,6 +183,14 @@ describe('CaptionStage', () => {
     expect(wrapper.text()).not.toContain('Transcrição ao vivo')
   })
 
+  it('não declara processamento somente local quando o ASR backend está ativo', () => {
+    const wrapper = mountStage({ captionState: 'listening', backendAsr: true } as any)
+    const status = wrapper.get('[data-testid="caption-status"]').text()
+
+    expect(status).toContain('servidor')
+    expect(status).not.toContain('processado somente neste navegador')
+  })
+
   it('anuncia somente a frase final mais recente fora do histórico navegável', () => {
     const wrapper = mountStage({
       transcript: [entry(1, 'Primeira frase.'), entry(2, 'Segunda frase.')],

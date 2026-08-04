@@ -4,9 +4,16 @@ import { defineComponent, h } from 'vue'
 import type { LiveSocket } from './socket'
 import type { AckError, ChatMessage, SessionState, TranscriptEntry } from './types'
 import { saveGuestAccess } from './guestAccess'
-import { useLiveSession } from './useLiveSession'
+import type { BackendAudioSegment } from './useBackendAudioFinalizer'
+import { MAX_PENDING_AUDIO_AGE_MS, useLiveSession } from './useLiveSession'
 
 const MAX_PENDING_FINALS = 50
+const MAX_PENDING_AUDIO = 8
+const audioSegment: BackendAudioSegment = {
+  pcm16: new ArrayBuffer(32_000),
+  sampleRate: 16_000,
+  durationMs: 1_000,
+}
 
 vi.mock('../stores/auth', async () => {
   const { computed, ref } = await import('vue')
@@ -185,6 +192,99 @@ describe('useLiveSession generic room contract', () => {
     expect(live.partialText.value).toBe('')
     expect(live.transcript.value).toEqual([transcript])
     expect(live.chat.value).toEqual([chat])
+  })
+
+  it('queues ephemeral PCM offline and flushes it once with the same id', async () => {
+    const { socket, live } = setup()
+    live.connect('session-1')
+    socket.fire('session:state', state)
+
+    await expect(
+      live.publishAudioSegment(audioSegment, 'audio-client-1'),
+    ).resolves.toEqual({
+      ok: true,
+      queued: true,
+      clientSegmentId: 'audio-client-1',
+    })
+    expect(live.pendingAudioCount.value).toBe(1)
+    expect(socket.last('transcription:audio')).toBeUndefined()
+
+    socket.connected = true
+    socket.fire('connect')
+    socket.ack('session:join', { ok: true })
+    socket.fire('session:state', state)
+    await Promise.resolve()
+
+    const payload = socket.last('transcription:audio')?.args[0] as Record<string, unknown>
+    expect(payload).toMatchObject({
+      clientSegmentId: 'audio-client-1',
+      sampleRate: 16_000,
+      durationMs: 1_000,
+    })
+    expect(payload.pcm16).toBe(audioSegment.pcm16)
+    socket.ack('transcription:audio', {
+      ok: true,
+      seq: 1,
+      replayed: false,
+      engine: 'faster-whisper',
+      model: 'small',
+      inferenceMs: 42,
+    })
+    await Promise.resolve()
+    expect(live.pendingAudioCount.value).toBe(0)
+  })
+
+  it('bounds the in-memory PCM queue', async () => {
+    const { socket, live } = setup()
+    live.connect('session-1')
+    socket.fire('session:state', state)
+    for (let index = 0; index < MAX_PENDING_AUDIO; index += 1) {
+      await live.publishAudioSegment(audioSegment, `audio-client-${index}`)
+    }
+
+    await expect(
+      live.publishAudioSegment(audioSegment, 'audio-client-overflow'),
+    ).resolves.toEqual({
+      ok: false,
+      error: {
+        code: 'AUDIO_QUEUE_FULL',
+        message: 'A fila temporária de áudio atingiu o limite',
+      },
+    })
+    expect(live.pendingAudioCount.value).toBe(MAX_PENDING_AUDIO)
+  })
+
+  it('expires PCM from memory while the socket remains offline', async () => {
+    vi.useFakeTimers()
+    const { socket, live, wrapper } = setup()
+    try {
+      live.connect('session-1')
+      socket.fire('session:state', state)
+      await live.publishAudioSegment(audioSegment, 'audio-client-expiring')
+
+      expect(live.pendingAudioCount.value).toBe(1)
+      await vi.advanceTimersByTimeAsync(MAX_PENDING_AUDIO_AGE_MS + 1)
+
+      expect(live.pendingAudioCount.value).toBe(0)
+      expect(live.actionError.value).toMatchObject({ code: 'AUDIO_EXPIRED' })
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('tracks backend ASR state without exposing audio', () => {
+    const { socket, live } = setup()
+    live.connect('session-1')
+    socket.fire('transcription:status', {
+      clientSegmentId: 'audio-client-1',
+      state: 'processing',
+    })
+
+    expect(live.transcriptionStatus.value).toEqual({
+      clientSegmentId: 'audio-client-1',
+      state: 'processing',
+    })
   })
 
   it('surfaces join and command failures', async () => {

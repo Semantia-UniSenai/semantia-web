@@ -75,7 +75,7 @@ src/
 │   ├── classes/               # componentes escolares legados
 │   └── live/                  # legenda, microfone, chat e mãos
 ├── data/                      # ferramentas e conteúdo público
-├── live/                      # Socket.IO, SpeechRecognition, Vosk local e legendas
+├── live/                      # Socket.IO, Vosk local para prévias e fila PCM efêmera
 ├── router/                    # rotas e guards
 ├── stores/auth.ts             # sessão JWT persistida
 └── views/                     # landing, auth, app, reuniões, convites e sala ao vivo
@@ -83,38 +83,37 @@ src/
 
 ## Fluxo atual da sala
 
-1. Host ou moderador entra na reunião e autoriza o microfone.
-2. Se `SpeechRecognition` funcionar, o navegador fornece hipóteses parciais e finais pelo caminho
-   rápido. A implementação dessa API pode depender do serviço do próprio fornecedor do navegador.
-3. Se a API estiver ausente ou falhar por `network`, `service-not-allowed` ou `start-failed`, o
-   frontend carrega sob demanda o modelo português Vosk e processa o microfone localmente em
-   WebAssembly/Web Worker. Os samples chegam ao reconhecedor por um `AudioWorklet` servido como
-   asset JavaScript same-origin, sem depender do legado `ScriptProcessorNode`.
-4. No fallback Vosk, somente o modelo é baixado; o áudio não é enviado à API Semantia nem a um
-   provedor de transcrição. O modelo padrão tem 32.440.432 bytes e pode ser substituído por
-   `VITE_VOSK_MODEL_URL`.
-5. Socket.IO transmite apenas texto parcial/final à API.
-6. O frontend apresenta as legendas literais; chat, presença e mãos usam o mesmo namespace `/live`.
+1. O anfitrião entra na reunião e autoriza o microfone.
+2. `getUserMedia` e `AudioWorklet` capturam a entrada escolhida; Vosk/WebAssembly produz somente
+   hipóteses parciais de baixa latência no navegador.
+3. O mesmo fluxo espelha samples em memória. Cada final preliminar Vosk fecha o buffer atual, remove
+   silêncio, reamostra para 16 kHz e codifica PCM16 sem criar arquivo.
+4. O segmento entra em fila efêmera de no máximo oito itens/60 segundos e segue como binário pelo
+   Socket.IO autenticado com um `clientSegmentId` estável para retry/reconexão.
+5. A API autoriza `HOST`, valida o segmento e chama o serviço ASR CPU-first. Somente o resultado do
+   backend pode virar final canônico persistido e exibido à plateia.
+6. O Vosk nunca é publicado como final silencioso no modo backend. Falha/saturação fica visível e a
+   aplicação não troca para cloud implicitamente.
+7. Áudio pendente é descartado em sucesso, falha definitiva, expiração, saída, stop ou encerramento;
+   não entra em storage, banco ou gravação. O teste isolado de microfone continua 100% local.
+8. Chat, presença, mãos e texto final usam o namespace `/live`; o serviço Python ASR permanece privado.
 
-O primeiro download/inicialização pode levar aproximadamente um minuto. Durante esse período o
-botão permite cancelar, reunião e chat continuam disponíveis e a interface não afirma que está
-transcrevendo. Antes de iniciar o processamento, o frontend retoma novamente o `AudioContext` para
-cobrir a suspensão ocorrida durante a carga longa. Depois do início, estados separados indicam
-conexão, silêncio e frames recebidos; um watchdog encerra a captura e orienta o usuário se nenhum
-frame chegar em quatro segundos. Pausar, cancelar, falhar ou desmontar a sala remove reconhecedor,
-portas, nós, tracks e `AudioContext`.
+A preparação inicial do Vosk pode levar aproximadamente um minuto. Durante esse período o botão
+permite cancelar, reunião e chat continuam disponíveis e a interface não afirma que está
+transcrevendo. Pausar, cancelar, falhar ou desmontar a sala remove reconhecedor, portas, nós, tracks,
+`AudioContext`, buffers e timers.
 
-Vosk e Web Speech são motores de reconhecimento automático de fala (ASR), não a futura IA
-generativa de adaptação para a plateia. A precisão do modelo local é inferior à de modelos maiores:
-no spike Firefox, “Semantia” virou “ser mantinha” e “Firefox” virou “falha fox”. Não aplicar correção
-generativa ou fabricar texto na etapa literal.
+Vosk e `faster-whisper` são motores de reconhecimento automático de fala (ASR), não a futura IA
+generativa de adaptação para a plateia. A precisão precisa ser medida no áudio real pt-BR; não aplicar
+correção generativa nem fabricar texto na etapa literal.
 
-A limpeza canônica acontece no backend. O frontend só quebra texto em linhas e apresenta a
+A limpeza canônica acontece no backend. O frontend só segmenta áudio, apresenta prévias e renderiza a
 experiência; clientes alternativos não podem decidir a regra de negócio.
 
 ## Rodar local
 
-Pré-requisito: API em `http://localhost:3000` ou `VITE_API_URL` apontando para outro ambiente.
+Pré-requisito: API em `http://localhost:3000` ou `VITE_API_URL` apontando para outro ambiente. A API
+deve alcançar um serviço ASR pronto; no repositório da API use `docker compose up -d postgres asr`.
 
 ```bash
 pnpm install

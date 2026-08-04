@@ -32,6 +32,15 @@ const transcription = useMeetingTranscription({
   deviceId: audioInput.selectedDeviceId,
   onPartial: (text) => void live.publishPartial(text),
   onFinal: (text) => void live.publishFinal(text, Date.now() - startedAt),
+  onAudioSegment: (segment) => live.publishAudioSegment(segment),
+})
+
+const asrQualityStatus = computed<'idle' | 'loading' | 'ready' | 'processing' | 'error'>(() => {
+  const backendState = live.transcriptionStatus.value?.state
+  if (live.pendingAudioCount.value > 0 || backendState === 'processing') return 'processing'
+  if (backendState === 'failed') return 'error'
+  if (transcription.listening.value) return 'ready'
+  return transcription.qualityStatus.value
 })
 
 const backTo = computed(() => '/app/salas')
@@ -202,6 +211,7 @@ function trapPanelFocus(event: KeyboardEvent) {
             :transcript="live.transcript.value"
             :partial-text="live.partialText.value"
             :caption-state="captionState"
+            backend-asr
           />
         </section>
 
@@ -263,8 +273,13 @@ function trapPanelFocus(event: KeyboardEvent) {
           :audio-level="transcription.audioLevel.value"
           :transport="transcription.transport.value ?? undefined"
           :has-hypothesis="transcription.hasHypothesis.value"
-          :quality-status="transcription.qualityStatus.value"
+          :quality-status="asrQualityStatus"
           :quality-progress="transcription.qualityProgress.value"
+          backend-asr
+          :pending-audio-count="live.pendingAudioCount.value"
+          :backend-engine="live.transcriptionStatus.value?.engine ?? undefined"
+          :backend-model="live.transcriptionStatus.value?.model ?? undefined"
+          :backend-inference-ms="live.transcriptionStatus.value?.inferenceMs ?? undefined"
           :audio-devices-supported="audioInput.supported"
           :audio-devices="audioInput.devices.value"
           :selected-device-id="audioInput.selectedDeviceId.value"

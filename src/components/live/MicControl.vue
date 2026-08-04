@@ -24,6 +24,11 @@ const props = withDefaults(
     hasHypothesis?: boolean
     qualityStatus?: 'idle' | 'loading' | 'ready' | 'processing' | 'error'
     qualityProgress?: number
+    backendAsr?: boolean
+    pendingAudioCount?: number
+    backendEngine?: string
+    backendModel?: string
+    backendInferenceMs?: number
 
     audioDevicesSupported?: boolean
     audioDevices?: readonly AudioInputDevice[]
@@ -41,6 +46,8 @@ const props = withDefaults(
     microphoneTestLevel: 0,
     qualityStatus: 'idle',
     qualityProgress: 0,
+    backendAsr: false,
+    pendingAudioCount: 0,
   },
 )
 
@@ -227,7 +234,8 @@ const AUDIO_DEVICE_ERROR_HINTS: Record<AudioInputError, string> = {
             </svg>
           </div>
           <p v-if="localSelectedDeviceId !== 'default'" class="mic__local-note">
-            Para respeitar esta entrada, a transcrição usa processamento local no navegador.
+            <template v-if="backendAsr">A entrada selecionada é capturada neste navegador; os finais são processados pelo ASR protegido do backend.</template>
+            <template v-else>Para respeitar esta entrada, a transcrição usa processamento local no navegador.</template>
           </p>
         </div>
 
@@ -299,7 +307,9 @@ const AUDIO_DEVICE_ERROR_HINTS: Record<AudioInputError, string> = {
         <template v-else-if="listening && localEngine && inputState === 'waiting'">Microfone autorizado. Conectando o processamento de áudio…</template>
         <template v-else-if="listening && localEngine && transport === 'switching'">Ajustando compatibilidade automaticamente — mantenha o microfone ativo…</template>
         <template v-else-if="listening && localEngine && inputState === 'silent'">Microfone conectado, mas sem sinal de voz. Fale normalmente ou confira a entrada selecionada.</template>
-        <template v-else-if="listening && localEngine && inputState === 'receiving' && hasHypothesis">Transcrição local confirmada — o texto está sendo exibido em tempo real.</template>
+        <template v-else-if="listening && localEngine && inputState === 'receiving' && hasHypothesis">
+          {{ backendAsr ? 'Prévia local ativa — o servidor confirmará o texto final.' : 'Transcrição local confirmada — o texto está sendo exibido em tempo real.' }}
+        </template>
         <template v-else-if="listening && localEngine && inputState === 'receiving' && transport === 'compatible'">Modo compatível ativo — áudio recebido, aguardando a primeira hipótese textual.</template>
         <template v-else-if="listening && localEngine && inputState === 'receiving'">Sinal de voz detectado — aguardando a primeira hipótese textual.</template>
         <template v-else-if="listening">Transcrevendo — a plateia está vendo sua fala em texto.</template>
@@ -311,31 +321,55 @@ const AUDIO_DEVICE_ERROR_HINTS: Record<AudioInputError, string> = {
         role="status"
         aria-live="polite"
       >
-        <template v-if="qualityStatus === 'loading'">
-          <strong>Aprimorando a precisão local — {{ Math.round(qualityProgress) }}%</strong>
-          <span>O modelo de qualidade é preparado em segundo plano; as legendas rápidas continuam disponíveis.</span>
-          <div
-            class="mic__quality-progress"
-            role="progressbar"
-            aria-label="Preparação do modelo local de qualidade"
-            aria-valuemin="0"
-            aria-valuemax="100"
-            :aria-valuenow="Math.round(qualityProgress)"
-          ><span :style="{ width: `${Math.round(qualityProgress)}%` }"></span></div>
-        </template>
-        <template v-else-if="qualityStatus === 'processing'">
-          <strong>Refinando a última legenda localmente…</strong>
-          <span>As próximas falas continuam sendo capturadas.</span>
-        </template>
-        <template v-else-if="qualityStatus === 'ready'">
-          <strong>Precisão local aprimorada pronta</strong>
-          <span>Os resultados finais são revisados antes da publicação.</span>
+        <template v-if="backendAsr">
+          <template v-if="qualityStatus === 'loading'">
+            <strong>Preparando o ASR do backend…</strong>
+            <span>A captura local continua enquanto o serviço fica disponível.</span>
+          </template>
+          <template v-else-if="qualityStatus === 'processing'">
+            <strong>Processando {{ pendingAudioCount }} {{ pendingAudioCount === 1 ? 'segmento' : 'segmentos' }} no backend…</strong>
+            <span>As próximas falas continuam sendo capturadas em uma fila limitada.</span>
+          </template>
+          <template v-else-if="qualityStatus === 'ready'">
+            <strong>ASR do backend pronto</strong>
+            <span>As prévias são locais; somente o servidor publica o texto final canônico.</span>
+          </template>
+          <template v-else>
+            <strong>Processamento final temporariamente indisponível</strong>
+            <span>Nenhum final local de baixa qualidade será publicado silenciosamente.</span>
+          </template>
+          <span v-if="backendEngine">
+            Motor: {{ backendEngine }}<template v-if="backendModel">/{{ backendModel }}</template><template v-if="backendInferenceMs != null"> · {{ backendInferenceMs }} ms</template>
+          </span>
+          <small>O áudio é enviado em segmentos efêmeros e descartado após o processamento; não é gravado por padrão.</small>
         </template>
         <template v-else>
-          <strong>Aprimoramento indisponível</strong>
-          <span>Os resultados finais continuam pelo reconhecedor local rápido.</span>
+          <template v-if="qualityStatus === 'loading'">
+            <strong>Aprimorando a precisão local — {{ Math.round(qualityProgress) }}%</strong>
+            <span>O modelo de qualidade é preparado em segundo plano; as legendas rápidas continuam disponíveis.</span>
+            <div
+              class="mic__quality-progress"
+              role="progressbar"
+              aria-label="Preparação do modelo local de qualidade"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              :aria-valuenow="Math.round(qualityProgress)"
+            ><span :style="{ width: `${Math.round(qualityProgress)}%` }"></span></div>
+          </template>
+          <template v-else-if="qualityStatus === 'processing'">
+            <strong>Refinando a última legenda localmente…</strong>
+            <span>As próximas falas continuam sendo capturadas.</span>
+          </template>
+          <template v-else-if="qualityStatus === 'ready'">
+            <strong>Precisão local aprimorada pronta</strong>
+            <span>Os resultados finais são revisados antes da publicação.</span>
+          </template>
+          <template v-else>
+            <strong>Aprimoramento indisponível</strong>
+            <span>Os resultados finais continuam pelo reconhecedor local rápido.</span>
+          </template>
+          <small>O áudio permanece neste navegador e não é enviado ao servidor.</small>
         </template>
-        <small>O áudio permanece neste navegador e não é enviado ao servidor.</small>
       </div>
       <div
         v-if="listening && localEngine && inputState !== 'waiting'"

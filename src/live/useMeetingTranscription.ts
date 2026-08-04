@@ -3,6 +3,10 @@ import type { Ref } from 'vue'
 import { useSpeechRecognition } from './useSpeechRecognition'
 import { useVoskTranscription } from './useVoskTranscription'
 import { useLocalWhisperFinalizer } from './useLocalWhisperFinalizer'
+import {
+  useBackendAudioFinalizer,
+  type BackendAudioSegment,
+} from './useBackendAudioFinalizer'
 
 export interface UseMeetingTranscriptionOptions {
   lang?: string
@@ -10,6 +14,9 @@ export interface UseMeetingTranscriptionOptions {
   deviceId?: Readonly<Ref<string>>
   onPartial: (text: string) => void
   onFinal: (text: string) => void
+  onAudioSegment?: (
+    segment: BackendAudioSegment,
+  ) => Promise<{ ok: boolean; error?: { code: string; message: string } }>
 }
 
 type TranscriptionEngine = 'browser' | 'local' | null
@@ -102,10 +109,25 @@ export function useMeetingTranscription(options: UseMeetingTranscriptionOptions)
     onFinal: handleFinal,
   })
   const quality = useLocalWhisperFinalizer()
+  const backendEnabled = typeof options.onAudioSegment === 'function'
+  const backendQuality = useBackendAudioFinalizer({
+    publish:
+      options.onAudioSegment ??
+      (async () => ({
+        ok: false,
+        error: { code: 'ASR_DISABLED', message: 'Backend ASR is not configured' },
+      })),
+  })
 
   async function handleLocalFinal(rawText: string) {
     if (!captureActive) return
     const generation = lifecycleGeneration
+    if (backendEnabled) {
+      await backendQuality.finalizeSegment()
+      if (!captureActive || generation !== lifecycleGeneration) return
+      resetPartialEmission()
+      return
+    }
     const result = await quality.finalizeSegment(rawText)
     if (!captureActive || generation !== lifecycleGeneration || !result.text) return
     handleFinal(result.text)
@@ -115,11 +137,14 @@ export function useMeetingTranscription(options: UseMeetingTranscriptionOptions)
     modelUrl: options.modelUrl,
     onPartial: handlePartial,
     onFinal: (text) => void handleLocalFinal(text),
-    onAudioChunk: quality.addAudioChunk,
+    onAudioChunk: (samples, sampleRate) => {
+      if (backendEnabled) backendQuality.addAudioChunk(samples, sampleRate)
+      else quality.addAudioChunk(samples, sampleRate)
+    },
   })
   const engine = ref<TranscriptionEngine>(null)
   let activeDeviceId = 'default'
-  const supported = browser.supported || local.supported
+  const supported = backendEnabled ? local.supported : browser.supported || local.supported
   const listening = computed(
     () => browser.listening.value || local.listening.value,
   )
@@ -147,7 +172,8 @@ export function useMeetingTranscription(options: UseMeetingTranscriptionOptions)
 
   async function startLocal() {
     engine.value = 'local'
-    quality.start()
+    if (backendEnabled) backendQuality.start()
+    else quality.start()
     await local.start(activeDeviceId)
   }
 
@@ -156,7 +182,7 @@ export function useMeetingTranscription(options: UseMeetingTranscriptionOptions)
     captureActive = true
     activeDeviceId = deviceId || 'default'
     const hasSpecificInput = activeDeviceId !== 'default'
-    if (browser.supported && !hasSpecificInput) {
+    if (!backendEnabled && browser.supported && !hasSpecificInput) {
       const browserStarted = await browser.start()
       if (!captureActive || generation !== lifecycleGeneration) return
       if (browserStarted) {
@@ -176,7 +202,8 @@ export function useMeetingTranscription(options: UseMeetingTranscriptionOptions)
     resetEmission()
     browser.stop()
     local.stop()
-    quality.stop()
+    if (backendEnabled) backendQuality.stop()
+    else quality.stop()
     engine.value = null
   }
 
@@ -224,10 +251,16 @@ export function useMeetingTranscription(options: UseMeetingTranscriptionOptions)
     audioLevel,
     transport,
     hasHypothesis,
-    qualityStatus: quality.status,
-    qualityProgress: quality.progress,
-    qualityError: quality.error,
-    qualityInferenceMs: quality.lastInferenceMs,
+    qualityStatus: computed(() =>
+      backendEnabled ? backendQuality.status.value : quality.status.value,
+    ),
+    qualityProgress: computed(() => (backendEnabled ? 100 : quality.progress.value)),
+    qualityError: computed(() =>
+      backendEnabled ? backendQuality.error.value : quality.error.value,
+    ),
+    qualityInferenceMs: computed(() =>
+      backendEnabled ? null : quality.lastInferenceMs.value,
+    ),
     engine: computed(() => engine.value),
     start,
     stop,

@@ -15,6 +15,9 @@ import type {
 let liveMock: ReturnType<typeof createLiveMock>
 let audioMock: ReturnType<typeof createAudioMock>
 let transcriptionMock: ReturnType<typeof createTranscriptionMock>
+let transcriptionOptions: {
+  onAudioSegment?: (segment: unknown) => Promise<unknown>
+} | null
 let compactViewport = false
 
 const routerMocks = vi.hoisted(() => ({
@@ -43,7 +46,10 @@ vi.mock('../live/useAudioInputDevices', () => ({
 }))
 
 vi.mock('../live/useMeetingTranscription', () => ({
-  useMeetingTranscription: () => transcriptionMock,
+  useMeetingTranscription: (options: typeof transcriptionOptions) => {
+    transcriptionOptions = options
+    return transcriptionMock
+  },
 }))
 
 import LiveRoomView from './LiveRoomView.vue'
@@ -87,6 +93,9 @@ function createLiveMock() {
     disconnect: vi.fn(),
     publishPartial: vi.fn(),
     publishFinal: vi.fn(),
+    publishAudioSegment: vi.fn().mockResolvedValue({ ok: true }),
+    pendingAudioCount: ref(0),
+    transcriptionStatus: ref(null),
     sendChat: vi.fn(),
     raiseHand: vi.fn(),
     lowerHand: vi.fn(),
@@ -155,6 +164,7 @@ beforeEach(() => {
   liveMock = createLiveMock()
   audioMock = createAudioMock()
   transcriptionMock = createTranscriptionMock()
+  transcriptionOptions = null
   compactViewport = false
   routerMocks.push.mockReset()
 
@@ -174,6 +184,19 @@ beforeEach(() => {
 })
 
 describe('LiveRoomView accessible stage layout', () => {
+  it('encaminha segmentos PCM ao backend da sessão', async () => {
+    mountRoom()
+    const segment = {
+      pcm16: new ArrayBuffer(32_000),
+      sampleRate: 16_000 as const,
+      durationMs: 1_000,
+    }
+
+    await transcriptionOptions?.onAudioSegment?.(segment)
+
+    expect(liveMock.publishAudioSegment).toHaveBeenCalledWith(segment)
+  })
+
   it('prioriza a legenda e mantém a superfície secundária fechada por padrão', () => {
     const wrapper = mountRoom()
 

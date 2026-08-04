@@ -108,6 +108,30 @@ describe('MicControl', () => {
     expect(wrapper.find('.mic__status').text()).toContain('Transcrição local confirmada')
   })
 
+  it('explica processamento backend, fila e retenção zero sem prometer áudio local', async () => {
+    const wrapper = mountMic({
+      listening: true,
+      localEngine: true,
+      inputState: 'receiving',
+      hasHypothesis: true,
+      qualityStatus: 'ready',
+      backendAsr: true,
+      pendingAudioCount: 0,
+      backendEngine: 'faster-whisper',
+      backendModel: 'small',
+      backendInferenceMs: 842,
+    } as any)
+
+    expect(wrapper.find('.mic__quality').text()).toContain('ASR do backend pronto')
+    expect(wrapper.find('.mic__quality').text()).toContain('faster-whisper/small')
+    expect(wrapper.find('.mic__quality').text()).toContain('842 ms')
+    expect(wrapper.find('.mic__quality').text()).toContain('descartado após o processamento')
+    expect(wrapper.find('.mic__quality').text()).not.toContain('permanece neste navegador')
+
+    await wrapper.setProps({ qualityStatus: 'processing', pendingAudioCount: 2 } as any)
+    expect(wrapper.find('.mic__quality').text()).toContain('2 segmentos')
+  })
+
   it('shows local quality-model progress without claiming captions are blocked', () => {
     const wrapper = mountMic({
       listening: true,

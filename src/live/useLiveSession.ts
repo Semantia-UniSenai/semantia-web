@@ -2,6 +2,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { useAuth } from '../stores/auth'
 import { readGuestAccess } from './guestAccess'
 import { createLiveSocket, type LiveSocket } from './socket'
+import type { BackendAudioSegment } from './useBackendAudioFinalizer'
 import type {
   Ack,
   AckError,
@@ -82,11 +83,29 @@ interface PendingFinal {
   queuedAt: number
 }
 
+interface PendingAudio extends BackendAudioSegment {
+  clientSegmentId: string
+  attempts: number
+  queuedAt: number
+}
+
+export interface BackendTranscriptionStatus {
+  clientSegmentId: string
+  state: 'processing' | 'complete' | 'failed'
+  engine?: string | null
+  model?: string | null
+  inferenceMs?: number | null
+  code?: string
+}
+
 const FINAL_ACK_TIMEOUT_MS = 5_000
 const FINAL_RETRY_DELAY_MS = 1_000
 const MAX_FINAL_ATTEMPTS = 3
 export const MAX_PENDING_FINALS = 50
 export const MAX_PENDING_FINAL_AGE_MS = 120_000
+export const MAX_PENDING_AUDIO = 8
+export const MAX_PENDING_AUDIO_AGE_MS = 60_000
+const AUDIO_ACK_TIMEOUT_MS = 50_000
 
 function createClientSegmentId() {
   return globalThis.crypto?.randomUUID?.() ??
@@ -110,6 +129,8 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
   const partialText = ref('')
   const pendingFinals = ref<PendingFinal[]>([])
   const pendingFinalCount = computed(() => pendingFinals.value.length)
+  const pendingAudioCount = ref(0)
+  const transcriptionStatus = ref<BackendTranscriptionStatus | null>(null)
   const ended = computed(() => session.value?.status === 'ENDED')
   const canPublishTranscript = computed(() => role.value === 'HOST' && !ended.value)
   const joined = computed(() => !!session.value && status.value === 'connected')
@@ -117,6 +138,10 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
   let joinedSocket = false
   let flushingFinals = false
   let finalRetryTimer: ReturnType<typeof setTimeout> | null = null
+  let pendingAudio: PendingAudio[] = []
+  let flushingAudio = false
+  let audioRetryTimer: ReturnType<typeof setTimeout> | null = null
+  let audioExpiryTimer: ReturnType<typeof setTimeout> | null = null
   const pendingAckCancels = new Set<(error: AckError) => void>()
 
   function connect(sessionId: string, joinToken?: string) {
@@ -151,6 +176,8 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
       cancelPendingAcks({ code: 'OFFLINE', message: 'Socket desconectado' })
       if (finalRetryTimer) clearTimeout(finalRetryTimer)
       finalRetryTimer = null
+      if (audioRetryTimer) clearTimeout(audioRetryTimer)
+      audioRetryTimer = null
     })
     next.on('connect_error', (error: Error) => {
       joinError.value = { code: 'CONNECTION_ERROR', message: error.message }
@@ -168,6 +195,7 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
       chat.value = state.chat.map(normalizeChatMessage)
       transcript.value = state.transcript.map(normalizeTranscriptEntry)
       void flushPendingFinals()
+      void flushPendingAudio()
     })
     next.on('presence:joined', (event: Participant | { participant: Participant }) => {
       const participant = 'participant' in event ? event.participant : event
@@ -207,6 +235,9 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
         (a, b) => a.seq - b.seq,
       )
     })
+    next.on('transcription:status', (event: BackendTranscriptionStatus) => {
+      transcriptionStatus.value = event
+    })
     next.on('session:ended', ({ endedAt }: { endedAt: string }) => {
       cancelPendingAcks({ code: 'SESSION_READ_ONLY', message: 'A sala foi encerrada' })
       if (session.value) {
@@ -214,6 +245,7 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
       }
       partialText.value = ''
       clearPendingFinals()
+      clearPendingAudio()
     })
     next.connect()
   }
@@ -425,6 +457,194 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
     pendingFinals.value = []
   }
 
+  function replacePendingAudio(next: PendingAudio[]) {
+    pendingAudio = next
+    pendingAudioCount.value = next.length
+    scheduleAudioExpiry()
+  }
+
+  function scheduleAudioExpiry() {
+    if (audioExpiryTimer) clearTimeout(audioExpiryTimer)
+    audioExpiryTimer = null
+    const first = pendingAudio[0]
+    if (!first) return
+    const remaining = Math.max(
+      0,
+      first.queuedAt + MAX_PENDING_AUDIO_AGE_MS - Date.now(),
+    )
+    audioExpiryTimer = setTimeout(() => {
+      audioExpiryTimer = null
+      const now = Date.now()
+      const retained = pendingAudio.filter(
+        (item) => now - item.queuedAt < MAX_PENDING_AUDIO_AGE_MS,
+      )
+      if (retained.length !== pendingAudio.length) {
+        replacePendingAudio(retained)
+        actionError.value = {
+          code: 'AUDIO_EXPIRED',
+          message: 'Um áudio temporário expirou antes da reconexão',
+        }
+        return
+      }
+      scheduleAudioExpiry()
+    }, remaining)
+  }
+
+  async function publishAudioSegment(
+    segment: BackendAudioSegment,
+    requestedClientSegmentId?: string,
+  ): Promise<
+    Ack<{
+      queued?: boolean
+      clientSegmentId?: string
+    }>
+  > {
+    if (ended.value) {
+      return {
+        ok: false,
+        error: { code: 'SESSION_READ_ONLY', message: 'A sala foi encerrada' },
+      }
+    }
+    if (!canPublishTranscript.value) {
+      const permissionError = {
+        code: 'FORBIDDEN',
+        message: 'Somente o anfitrião pode publicar legendas',
+      }
+      actionError.value = permissionError
+      return { ok: false, error: permissionError }
+    }
+    if (
+      !(segment.pcm16 instanceof ArrayBuffer) ||
+      segment.pcm16.byteLength === 0 ||
+      segment.pcm16.byteLength % 2 !== 0 ||
+      segment.pcm16.byteLength > 960_000 ||
+      segment.sampleRate !== 16_000 ||
+      segment.durationMs < 250 ||
+      segment.durationMs > 30_000
+    ) {
+      const audioError = {
+        code: 'INVALID_AUDIO',
+        message: 'O segmento de áudio é inválido',
+      }
+      actionError.value = audioError
+      return { ok: false, error: audioError }
+    }
+    const clientSegmentId = requestedClientSegmentId || createClientSegmentId()
+    if (pendingAudio.some((item) => item.clientSegmentId === clientSegmentId)) {
+      return { ok: true, queued: true, clientSegmentId }
+    }
+    if (pendingAudio.length >= MAX_PENDING_AUDIO) {
+      const queueError = {
+        code: 'AUDIO_QUEUE_FULL',
+        message: 'A fila temporária de áudio atingiu o limite',
+      }
+      actionError.value = queueError
+      return { ok: false, error: queueError }
+    }
+    replacePendingAudio([
+      ...pendingAudio,
+      {
+        ...segment,
+        clientSegmentId,
+        attempts: 0,
+        queuedAt: Date.now(),
+      },
+    ])
+    void flushPendingAudio()
+    return { ok: true, queued: true, clientSegmentId }
+  }
+
+  async function flushPendingAudio() {
+    if (
+      flushingAudio ||
+      !joinedSocket ||
+      !socket.value?.connected ||
+      ended.value
+    ) {
+      return
+    }
+    flushingAudio = true
+    try {
+      while (pendingAudio.length > 0 && socket.value?.connected && joinedSocket) {
+        const current = pendingAudio[0]
+        if (!current) break
+        if (Date.now() - current.queuedAt >= MAX_PENDING_AUDIO_AGE_MS) {
+          replacePendingAudio(
+            pendingAudio.filter((item) => item.clientSegmentId !== current.clientSegmentId),
+          )
+          actionError.value = {
+            code: 'AUDIO_EXPIRED',
+            message: 'Um áudio temporário expirou antes da reconexão',
+          }
+          continue
+        }
+        const { attempts: _attempts, queuedAt: _queuedAt, ...payload } = current
+        const ack = await emitAck<{
+          seq: number | null
+          replayed: boolean
+          engine: string | null
+          model: string | null
+          inferenceMs: number | null
+        }>('transcription:audio', payload, AUDIO_ACK_TIMEOUT_MS)
+        if (
+          ended.value ||
+          !socket.value?.connected ||
+          !joinedSocket ||
+          !pendingAudio.some((item) => item.clientSegmentId === current.clientSegmentId)
+        ) {
+          return
+        }
+        if (ack.ok) {
+          replacePendingAudio(
+            pendingAudio.filter((item) => item.clientSegmentId !== current.clientSegmentId),
+          )
+          continue
+        }
+
+        current.attempts += 1
+        const retryable = [
+          'OFFLINE',
+          'ACK_TIMEOUT',
+          'ASR_BUSY',
+          'ASR_UNAVAILABLE',
+        ].includes(ack.error.code)
+        if (!retryable || current.attempts >= MAX_FINAL_ATTEMPTS) {
+          replacePendingAudio(
+            pendingAudio.filter((item) => item.clientSegmentId !== current.clientSegmentId),
+          )
+          if (retryable) {
+            actionError.value = {
+              code: 'AUDIO_DELIVERY_FAILED',
+              message: 'Não foi possível confirmar o processamento do áudio',
+            }
+          }
+          continue
+        }
+        scheduleAudioRetry()
+        break
+      }
+    } finally {
+      flushingAudio = false
+    }
+  }
+
+  function scheduleAudioRetry() {
+    if (audioRetryTimer) return
+    audioRetryTimer = setTimeout(() => {
+      audioRetryTimer = null
+      void flushPendingAudio()
+    }, FINAL_RETRY_DELAY_MS)
+  }
+
+  function clearPendingAudio() {
+    if (audioRetryTimer) clearTimeout(audioRetryTimer)
+    audioRetryTimer = null
+    if (audioExpiryTimer) clearTimeout(audioExpiryTimer)
+    audioExpiryTimer = null
+    replacePendingAudio([])
+    transcriptionStatus.value = null
+  }
+
   const sendChat = (text: string) => emitAck('chat:send', { text })
   const raiseHand = () => emitAck('hand:raise')
   const lowerHand = () => emitAck('hand:lower')
@@ -435,6 +655,7 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
   function disconnect() {
     cancelPendingAcks({ code: 'OFFLINE', message: 'Socket desconectado' })
     clearPendingFinals()
+    clearPendingAudio()
     joinedSocket = false
     socket.value?.removeAllListeners()
     socket.value?.disconnect()
@@ -457,6 +678,8 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
     transcript,
     partialText,
     pendingFinalCount,
+    pendingAudioCount,
+    transcriptionStatus,
     ended,
     canPublishTranscript,
     joined,
@@ -465,6 +688,7 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
     disconnect,
     publishPartial,
     publishFinal,
+    publishAudioSegment,
     sendChat,
     raiseHand,
     lowerHand,
