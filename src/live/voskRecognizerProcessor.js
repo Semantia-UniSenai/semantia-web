@@ -4,6 +4,7 @@ class SemantiaVoskProcessor extends AudioWorkletProcessor {
     this.recognizerId = null
     this.recognizerPort = null
     this.transport = 'direct'
+    this.mirrorAudio = false
     this.chunkSize = 2048
     this.chunk = new Float32Array(this.chunkSize)
     this.chunkOffset = 0
@@ -17,6 +18,7 @@ class SemantiaVoskProcessor extends AudioWorkletProcessor {
     if (event.data?.action === 'init') {
       this.recognizerId = event.data.recognizerId
       this.recognizerPort = event.ports[0]
+      this.mirrorAudio = event.data.mirrorAudio === true
       return
     }
     if (event.data?.action === 'set-transport' && event.data.transport === 'main-thread') {
@@ -46,6 +48,17 @@ class SemantiaVoskProcessor extends AudioWorkletProcessor {
         : this.chunk.slice(0, this.chunkOffset)
 
     if (this.transport === 'direct' && this.recognizerPort && this.recognizerId) {
+      if (this.mirrorAudio) {
+        const mirrorChunk = audioChunk.slice()
+        this.port.postMessage(
+          {
+            action: 'audio-mirror',
+            samples: mirrorChunk,
+            sampleRate,
+          },
+          [mirrorChunk.buffer],
+        )
+      }
       const scaledChunk = audioChunk.map((sample) => sample * 0x8000)
       this.recognizerPort.postMessage(
         {

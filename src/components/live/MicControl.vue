@@ -22,6 +22,9 @@ const props = withDefaults(
     audioLevel?: number
     transport?: 'direct' | 'switching' | 'compatible'
     hasHypothesis?: boolean
+    qualityStatus?: 'idle' | 'loading' | 'ready' | 'processing' | 'error'
+    qualityProgress?: number
+
     audioDevicesSupported?: boolean
     audioDevices?: readonly AudioInputDevice[]
     selectedDeviceId?: string
@@ -36,6 +39,8 @@ const props = withDefaults(
     selectedDeviceId: 'default',
     microphoneTestState: 'idle',
     microphoneTestLevel: 0,
+    qualityStatus: 'idle',
+    qualityProgress: 0,
   },
 )
 
@@ -93,6 +98,8 @@ const ERROR_HINTS: Record<string, string> = {
   'audio-capture': 'Nenhum microfone encontrado. Conecte um microfone e tente de novo.',
   'start-failed': 'Não foi possível iniciar a captura nativa. Tentando transcrição local.',
   network: 'O serviço de voz nativo não respondeu. A transcrição local será iniciada.',
+  'no-speech-limit':
+    'O reconhecimento nativo encerrou repetidamente sem texto. A transcrição local será iniciada sem trocar de navegador.',
   'model-load-failed':
     'Não foi possível carregar o modelo local de transcrição. Verifique a conexão e tente novamente.',
   'recognition-failed':
@@ -299,6 +306,38 @@ const AUDIO_DEVICE_ERROR_HINTS: Record<AudioInputError, string> = {
         <template v-else>Microfone pausado. A plateia não recebe texto novo.</template>
       </p>
       <div
+        v-if="listening && localEngine && qualityStatus !== 'idle'"
+        class="mic__quality"
+        role="status"
+        aria-live="polite"
+      >
+        <template v-if="qualityStatus === 'loading'">
+          <strong>Aprimorando a precisão local — {{ Math.round(qualityProgress) }}%</strong>
+          <span>O modelo de qualidade é preparado em segundo plano; as legendas rápidas continuam disponíveis.</span>
+          <div
+            class="mic__quality-progress"
+            role="progressbar"
+            aria-label="Preparação do modelo local de qualidade"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            :aria-valuenow="Math.round(qualityProgress)"
+          ><span :style="{ width: `${Math.round(qualityProgress)}%` }"></span></div>
+        </template>
+        <template v-else-if="qualityStatus === 'processing'">
+          <strong>Refinando a última legenda localmente…</strong>
+          <span>As próximas falas continuam sendo capturadas.</span>
+        </template>
+        <template v-else-if="qualityStatus === 'ready'">
+          <strong>Precisão local aprimorada pronta</strong>
+          <span>Os resultados finais são revisados antes da publicação.</span>
+        </template>
+        <template v-else>
+          <strong>Aprimoramento indisponível</strong>
+          <span>Os resultados finais continuam pelo reconhecedor local rápido.</span>
+        </template>
+        <small>O áudio permanece neste navegador e não é enviado ao servidor.</small>
+      </div>
+      <div
         v-if="listening && localEngine && inputState !== 'waiting'"
         class="mic__meter"
         role="progressbar"
@@ -319,4 +358,5 @@ const AUDIO_DEVICE_ERROR_HINTS: Record<AudioInputError, string> = {
 
 <style scoped>
 .mic{position:relative;display:flex;flex-direction:column;gap:8px}.mic__controls{display:flex;align-items:stretch;justify-content:center;gap:10px}.mic__btn,.mic__device-trigger{min-height:54px;border:1px solid transparent;border-radius:18px;color:#fff;font:inherit;cursor:pointer;transition:transform .18s ease,border-color .18s ease,background .18s ease,box-shadow .18s ease}.mic__btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:10px;min-width:240px;padding:13px 22px;background:var(--brand);font-weight:800;font-size:14.5px;box-shadow:var(--shadow-brand)}.mic__btn:hover:not(:disabled),.mic__device-trigger:hover:not(:disabled){transform:translateY(-1px)}.mic__btn.live{background:linear-gradient(115deg,#d84f6b,#c2415c);box-shadow:0 14px 32px rgba(216,79,107,.28)}.mic__btn.preparing{background:linear-gradient(115deg,#5a6683,#424d68);box-shadow:0 12px 28px rgba(30,40,66,.28)}.mic__btn:disabled,.mic__device-trigger:disabled{opacity:.5;cursor:default}.mic__pulse{display:none;position:absolute;left:16px;width:9px;height:9px;border-radius:50%;background:#fff}.mic__btn.live .mic__pulse,.mic__btn.preparing .mic__pulse{display:block;animation:mic-pulse 1.4s ease-in-out infinite}.mic__btn.preparing .mic__pulse{animation-duration:.9s}.mic__device-trigger{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;width:min(330px,38vw);padding:8px 13px;background:#1b2439;border-color:rgba(255,255,255,.13);text-align:left;box-shadow:0 10px 28px rgba(4,8,20,.2)}.mic__device-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.08);color:#e7ecfa}.mic__device-copy{display:grid;min-width:0;gap:2px}.mic__device-copy small{color:#8996b4;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}.mic__device-copy strong{overflow:hidden;color:#eef2ff;font-size:12.5px;text-overflow:ellipsis;white-space:nowrap}.mic__chevron{color:#aeb8cd}.mic__status{margin:0;text-align:center;font-size:13px;color:var(--muted)}.mic__status.live{color:#f2a4b5;font-weight:600}.mic__status.receiving{color:#69e5b1}.mic__status.warning{color:#f1c770}.mic__status.recovering{color:#8dc6ff}.mic__meter{width:min(570px,100%);height:6px;margin:0 auto;overflow:hidden;border-radius:999px;background:rgba(126,139,170,.22)}.mic__meter span{display:block;min-width:2px;height:100%;border-radius:inherit;background:linear-gradient(90deg,#54dda3,#d8b14f,#d84f6b);transition:width 120ms linear}.mic-settings{position:absolute;z-index:20;left:50%;bottom:calc(100% + 14px);width:min(440px,calc(100vw - 40px));padding:20px;border:1px solid rgba(255,255,255,.12);border-radius:22px;background:#1b2232;color:#f5f7fc;box-shadow:0 24px 70px rgba(2,6,18,.48);transform:translateX(-50%)}.mic-settings::after{position:absolute;bottom:-7px;left:50%;width:14px;height:14px;background:#1b2232;border-right:1px solid rgba(255,255,255,.12);border-bottom:1px solid rgba(255,255,255,.12);content:"";transform:translateX(-50%) rotate(45deg)}.mic-settings__header,.mic-settings__label-row,.mic-test__heading,.mic-test__footer{display:flex;align-items:center;justify-content:space-between;gap:14px}.mic-settings__header h2{margin:2px 0 0;font-size:18px}.mic-settings__eyebrow{color:#e98299;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.12em}.mic-settings__close{display:grid;place-items:center;width:38px;height:38px;border:0;border-radius:50%;background:rgba(255,255,255,.07);color:#dce4f5;font-size:24px;cursor:pointer}.mic-settings__field{display:grid;gap:8px;margin-top:20px}.mic-settings__label-row label,.mic-test__heading strong{font-size:13px;font-weight:800}.mic-settings__refresh{border:0;background:transparent;color:#f08aa0;font:700 12px var(--display);cursor:pointer}.mic-settings__select-wrap{position:relative;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;min-height:50px;padding:0 13px;border:1px solid rgba(255,255,255,.14);border-radius:14px;background:#121827;color:#aeb9d0}.mic-settings__select-wrap:focus-within{border-color:#e56b85;box-shadow:0 0 0 3px rgba(229,107,133,.14)}.mic-settings__select-wrap select{width:100%;height:48px;border:0;outline:0;appearance:none;background:transparent;color:#f1f4fb;font:600 13px var(--display)}.mic-settings__select-wrap option{background:#1b2232;color:#fff}.mic-settings__select-chevron{pointer-events:none}.mic__local-note{margin:0;color:#a8b2c7;font-size:11.5px;line-height:1.5}.mic-test{display:grid;gap:13px;margin-top:16px;padding:15px;border:1px solid rgba(255,255,255,.1);border-radius:16px;background:rgba(6,10,20,.25)}.mic-test__heading>div{display:grid;gap:3px}.mic-test__heading small{color:#919db5;font-size:11.5px}.mic-test__check{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:rgba(65,211,145,.15);color:#65dda8;font-weight:900}.mic-test__meter{display:flex;align-items:center;gap:5px;height:30px;padding:0 2px}.mic-test__bar{width:7px;min-height:7px;border-radius:999px;background:#394256;transition:height 100ms ease,background 100ms ease,transform 100ms ease}.mic-test__bar.active{background:linear-gradient(180deg,#74e5b7,#44c992);transform:scaleY(1.08)}.mic-test__status{margin:0;color:#aeb8cc;font-size:11.5px}.mic-test__action{min-height:38px;padding:8px 13px;border:1px solid rgba(235,113,138,.45);border-radius:11px;background:rgba(235,113,138,.11);color:#f59aad;font:800 11.5px var(--display);cursor:pointer}.mic-settings__error{margin:14px 0 0;padding:10px 12px;border:1px solid rgba(240,116,137,.3);border-radius:12px;background:rgba(221,73,101,.1);color:#ffadbc;font-size:12px;line-height:1.45}.mic-settings__privacy{display:flex;align-items:flex-start;gap:7px;margin:14px 0 0;color:#8995ad;font-size:10.5px;line-height:1.45}.mic-settings__privacy svg{flex:0 0 auto;margin-top:1px;color:#65dda8}.mic__error,.mic__unsupported{margin:0;padding:12px 14px;border:1px solid rgba(216,79,107,.3);border-radius:12px;background:rgba(216,79,107,.09);color:#ffadbc;font-size:13px}.mic__unsupported{background:rgba(255,176,32,.1);border-color:rgba(255,176,32,.4);color:#f1c770}@keyframes mic-pulse{50%{opacity:.3;transform:scale(.8)}}@media(max-width:760px){.mic__controls{align-items:stretch}.mic__btn{min-width:0;flex:1;padding-inline:16px}.mic__device-trigger{width:58px;grid-template-columns:1fr;padding:8px}.mic__device-copy,.mic__chevron{display:none}.mic__device-icon{margin:auto}.mic-settings{position:fixed;right:12px;bottom:84px;left:12px;width:auto;max-height:calc(100svh - 104px);overflow-y:auto;transform:none}.mic-settings::after{display:none}}@media(prefers-reduced-motion:reduce){.mic__btn,.mic__device-trigger,.mic-test__bar,.mic__meter span{transition:none}.mic__btn.live .mic__pulse,.mic__btn.preparing .mic__pulse{animation:none}}
+.mic__quality{display:grid;gap:5px;width:min(100%,680px);margin:2px auto 0;padding:10px 13px;border:1px solid rgba(130,148,190,.24);border-radius:12px;background:rgba(18,27,47,.72);color:#cbd5eb;font-size:12px}.mic__quality strong{color:#f2f5ff;font-size:12.5px}.mic__quality small{color:#8f9cb7}.mic__quality-progress{height:5px;overflow:hidden;border-radius:999px;background:rgba(255,255,255,.1)}.mic__quality-progress span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,#46d795,#7de0ff);transition:width .2s ease}
 </style>

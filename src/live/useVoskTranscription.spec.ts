@@ -159,12 +159,74 @@ describe('useVoskTranscription', () => {
     expect(onFinal).toHaveBeenCalledWith('fala final')
 
     transcription.stop()
-    expect(recognizer.retrieveFinalResult).toHaveBeenCalledTimes(1)
+    expect(recognizer.retrieveFinalResult).not.toHaveBeenCalled()
+    expect(recognizer.remove).toHaveBeenCalledTimes(1)
     expect(stopTrack).toHaveBeenCalledTimes(1)
     expect(source.disconnect).toHaveBeenCalled()
     expect(processor.disconnect).toHaveBeenCalled()
     expect(contextClose).toHaveBeenCalled()
+    expect(model.terminate).toHaveBeenCalledTimes(1)
     expect(transcription.listening.value).toBe(false)
+  })
+
+  it('terminates a model that finishes loading after capture is stopped', async () => {
+    let resolveModel!: (loadedModel: typeof model) => void
+    createModel.mockReturnValueOnce(
+      new Promise<typeof model>((resolve) => {
+        resolveModel = resolve
+      }),
+    )
+    const transcription = useVoskTranscription({
+      onPartial: vi.fn(),
+      onFinal: vi.fn(),
+    })
+
+    const starting = transcription.start()
+    await vi.waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(1))
+    transcription.stop()
+    resolveModel(model)
+    await starting
+
+    expect(model.terminate).toHaveBeenCalledTimes(1)
+    expect(transcription.listening.value).toBe(false)
+  })
+
+  it('does not tear down a restarted capture when a stale model load finishes', async () => {
+    let resolveStaleModel!: (loadedModel: typeof model) => void
+    const staleModel = { ...model, terminate: vi.fn() }
+    const activeModel = { ...model, terminate: vi.fn() }
+    createModel
+      .mockReturnValueOnce(
+        new Promise<typeof model>((resolve) => {
+          resolveStaleModel = resolve
+        }),
+      )
+      .mockResolvedValueOnce(activeModel)
+    const stopStaleTrack = vi.fn()
+    const stopActiveTrack = vi.fn()
+    getUserMedia
+      .mockResolvedValueOnce({ getTracks: () => [{ stop: stopStaleTrack }] })
+      .mockResolvedValueOnce({ getTracks: () => [{ stop: stopActiveTrack }] })
+    const transcription = useVoskTranscription({
+      onPartial: vi.fn(),
+      onFinal: vi.fn(),
+    })
+
+    const staleStart = transcription.start()
+    await vi.waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(1))
+    transcription.stop()
+    await transcription.start()
+    expect(transcription.listening.value).toBe(true)
+
+    resolveStaleModel(staleModel)
+    await staleStart
+
+    expect(staleModel.terminate).toHaveBeenCalledTimes(1)
+    expect(activeModel.terminate).not.toHaveBeenCalled()
+    expect(stopStaleTrack).toHaveBeenCalledTimes(1)
+    expect(stopActiveTrack).not.toHaveBeenCalled()
+    expect(transcription.inputState.value).not.toBe('idle')
+    transcription.stop()
   })
 
   it('captures the selected audio input with an exact device constraint', async () => {
@@ -234,7 +296,11 @@ describe('useVoskTranscription', () => {
     expect(latestWorkletNode).not.toBeNull()
     expect(model.registerPort).toHaveBeenCalledWith(modelPort)
     expect(workletPortPostMessage).toHaveBeenCalledWith(
-      { action: 'init', recognizerId: 'recognizer-1' },
+      {
+        action: 'init',
+        recognizerId: 'recognizer-1',
+        mirrorAudio: false,
+      },
       [processorPort],
     )
     expect(source.connect).toHaveBeenCalledWith(latestWorkletNode)
@@ -250,6 +316,26 @@ describe('useVoskTranscription', () => {
     expect(workletDisconnect).toHaveBeenCalled()
     expect(workletPortClose).toHaveBeenCalled()
     expect(modelPortClose).toHaveBeenCalled()
+  })
+
+  it('mirrors direct PCM chunks only when a local quality finalizer asks for them', async () => {
+    vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode)
+    vi.stubGlobal('MessageChannel', FakeMessageChannel)
+    const onAudioChunk = vi.fn()
+    const transcription = useVoskTranscription({
+      onPartial: vi.fn(),
+      onFinal: vi.fn(),
+      onAudioChunk,
+    } as any)
+
+    await transcription.start()
+    const samples = new Float32Array([0.03, -0.2, 0.1])
+    workletMessageHandler?.({
+      data: { action: 'audio-mirror', samples, sampleRate: 48_000 },
+    } as MessageEvent)
+
+    expect(onAudioChunk).toHaveBeenCalledWith(samples, 48_000)
+    transcription.stop()
   })
 
   it('switches to the compatible transport when audible frames produce no hypothesis', async () => {

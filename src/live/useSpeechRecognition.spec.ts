@@ -13,10 +13,13 @@ interface FakeResultEvent {
 
 class FakeRecognition {
   static instances: FakeRecognition[] = []
+  static available = vi.fn<() => Promise<string>>()
+  static install = vi.fn<() => Promise<boolean>>()
 
   lang = ''
   continuous = false
   interimResults = false
+  processLocally = false
   onresult: ((e: FakeResultEvent) => void) | null = null
   onerror: ((e: { error: string }) => void) | null = null
   onend: (() => void) | null = null
@@ -69,6 +72,8 @@ function lastRec(): FakeRecognition {
 
 beforeEach(() => {
   FakeRecognition.instances = []
+  FakeRecognition.available.mockReset()
+  FakeRecognition.install.mockReset()
   g.SpeechRecognition = FakeRecognition
 })
 
@@ -77,6 +82,28 @@ afterEach(() => {
 })
 
 describe('useSpeechRecognition', () => {
+  it('does not start a remote recognizer when pt-BR on-device is unavailable', async () => {
+    FakeRecognition.available.mockResolvedValue('unavailable')
+    const { api } = mountSpeech({ localOnly: true } as any)
+
+    await expect(api.start()).resolves.toBe(false)
+    expect(FakeRecognition.instances).toHaveLength(0)
+    expect(api.error.value).toBe('local-unavailable')
+  })
+
+  it('enables processLocally before starting an available pt-BR package', async () => {
+    FakeRecognition.available.mockResolvedValue('available')
+    const { api } = mountSpeech({ localOnly: true } as any)
+
+    await expect(api.start()).resolves.toBe(true)
+    expect(FakeRecognition.available).toHaveBeenCalledWith({
+      langs: ['pt-BR'],
+      processLocally: true,
+    })
+    expect(lastRec().processLocally).toBe(true)
+    expect(lastRec().start).toHaveBeenCalledTimes(1)
+  })
+
   it('supported=false sem construtor no ambiente; start vira no-op', () => {
     delete g.SpeechRecognition
     const { api } = mountSpeech()
@@ -217,6 +244,23 @@ describe('useSpeechRecognition', () => {
 
     expect(api.error.value).toBeNull()
     expect(api.listening.value).toBe(true)
+  })
+
+  it('limits repeated empty restarts instead of looping forever', async () => {
+    vi.useFakeTimers()
+    const { api } = mountSpeech()
+    await api.start()
+    const rec = lastRec()
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      rec.onerror?.({ error: 'no-speech' })
+      rec.onend?.()
+      await vi.advanceTimersByTimeAsync(2_000)
+    }
+
+    expect(api.error.value).toBe('no-speech-limit')
+    expect(api.listening.value).toBe(false)
+    expect(rec.stop).toHaveBeenCalledTimes(1)
   })
 
   it("um 'network' isolado é transitório (deixa o auto-restart agir)", () => {

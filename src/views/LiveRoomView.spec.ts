@@ -62,13 +62,15 @@ function createLiveMock() {
     hostId: 'host-1',
     hostName: 'Cauê',
   })
+  const role = ref<ParticipantRole | null>('HOST')
+  const ended = computed(() => session.value?.status === 'ENDED')
 
   return {
     status: ref<'offline' | 'connecting' | 'connected'>('connected'),
     joinError: ref<AckError | null>(null),
     actionError: ref<AckError | null>(null),
     session,
-    role: ref<ParticipantRole | null>('HOST'),
+    role,
     canManage: ref(true),
     participants: ref<Participant[]>([
       { participantId: 'host-1', name: 'Cauê', role: 'HOST' },
@@ -77,7 +79,8 @@ function createLiveMock() {
     chat: ref<ChatMessage[]>([]),
     transcript: ref<TranscriptEntry[]>([]),
     partialText: ref(''),
-    ended: computed(() => session.value?.status === 'ENDED'),
+    ended,
+    canPublishTranscript: computed(() => role.value === 'HOST' && !ended.value),
     joined: computed(() => true),
     currentParticipantId: ref<string | null>('host-1'),
     connect: vi.fn(),
@@ -119,6 +122,8 @@ function createTranscriptionMock() {
     audioLevel: ref(0),
     transport: ref<'direct' | 'switching' | 'compatible' | null>(null),
     hasHypothesis: ref(false),
+    qualityStatus: ref<'idle' | 'loading' | 'ready' | 'refining' | 'fallback'>('idle'),
+    qualityProgress: ref(0),
     start: vi.fn(),
     stop: vi.fn(),
   }

@@ -9,7 +9,6 @@ const DEFAULT_MODEL_URL =
 const WORKLET_MODULE_URL = workletModuleUrl
 const WORKLET_PROCESSOR_NAME = 'semantia-vosk-recognizer'
 const PROCESSOR_BUFFER_SIZE = 4_096
-const FINAL_RESULT_GRACE_MS = 1_000
 const AUDIO_FRAME_TIMEOUT_MS = 4_000
 const DIRECT_HYPOTHESIS_TIMEOUT_MS = 8_000
 const COMPATIBLE_HYPOTHESIS_TIMEOUT_MS = 12_000
@@ -39,6 +38,12 @@ interface AudioChunkMessage {
   sampleRate: number
 }
 
+interface AudioMirrorMessage {
+  action: 'audio-mirror'
+  samples: Float32Array
+  sampleRate: number
+}
+
 interface TransportReadyMessage {
   action: 'transport-ready'
   transport: 'main-thread'
@@ -48,6 +53,7 @@ export interface UseVoskTranscriptionOptions {
   modelUrl?: string
   onPartial: (text: string) => void
   onFinal: (text: string) => void
+  onAudioChunk?: (samples: Float32Array, sampleRate: number) => void
 }
 
 function getAudioContextCtor(): typeof AudioContext | null {
@@ -111,6 +117,18 @@ function isAudioChunkMessage(value: unknown): value is AudioChunkMessage {
   )
 }
 
+function isAudioMirrorMessage(value: unknown): value is AudioMirrorMessage {
+  if (!value || typeof value !== 'object') return false
+  const message = value as Partial<AudioMirrorMessage>
+  return (
+    message.action === 'audio-mirror' &&
+    message.samples instanceof Float32Array &&
+    typeof message.sampleRate === 'number' &&
+    Number.isFinite(message.sampleRate) &&
+    message.sampleRate > 0
+  )
+}
+
 function isTransportReadyMessage(value: unknown): value is TransportReadyMessage {
   if (!value || typeof value !== 'object') return false
   const message = value as Partial<TransportReadyMessage>
@@ -133,6 +151,7 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
 
   let model: Model | null = null
   let modelPromise: Promise<Model> | null = null
+  let modelGeneration = 0
   let stream: MediaStream | null = null
   let context: AudioContext | null = null
   let source: MediaStreamAudioSourceNode | null = null
@@ -149,20 +168,34 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
   function ensureModel() {
     if (model) return Promise.resolve(model)
     if (!modelPromise) {
-      modelPromise = import('vosk-browser')
+      const generation = modelGeneration
+      const pendingModel = import('vosk-browser')
         .then(({ createModel }) =>
           createModel(options.modelUrl ?? DEFAULT_MODEL_URL, VOSK_LOG_LEVEL_WARNING),
         )
         .then((loadedModel) => {
+          if (generation !== modelGeneration) {
+            loadedModel.terminate()
+            throw new Error('model-load-cancelled')
+          }
           model = loadedModel
           return loadedModel
         })
         .catch((cause) => {
-          modelPromise = null
+          if (modelPromise === pendingModel) modelPromise = null
           throw cause
         })
+      modelPromise = pendingModel
     }
     return modelPromise
+  }
+
+  function terminateModel() {
+    modelGeneration += 1
+    const loadedModel = model
+    model = null
+    modelPromise = null
+    loadedModel?.terminate()
   }
 
   function clearAudioFrameTimeout() {
@@ -196,12 +229,12 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
           hypothesisTimeout = null
           if (transport.value !== 'switching' || recognizer !== activeRecognizer) return
           error.value = 'recognition-failed'
-          stopCapture(false)
+          stopCapture()
         }, TRANSPORT_SWITCH_TIMEOUT_MS)
         return
       }
       error.value = 'recognition-no-results'
-      stopCapture(false)
+      stopCapture()
     }, timeout)
   }
 
@@ -221,19 +254,8 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
     audioFrameTimeout = window.setTimeout(() => {
       if (!listening.value || inputState.value !== 'waiting') return
       error.value = 'audio-processing-stalled'
-      stopCapture(false)
+      stopCapture()
     }, AUDIO_FRAME_TIMEOUT_MS)
-  }
-
-  function removeRecognizerAfterFinal(activeRecognizer: KaldiRecognizer) {
-    let removed = false
-    const remove = () => {
-      if (removed) return
-      removed = true
-      activeRecognizer.remove()
-    }
-    activeRecognizer.on('result', remove)
-    window.setTimeout(remove, FINAL_RESULT_GRACE_MS)
   }
 
   function disconnectAudioGraph() {
@@ -263,7 +285,7 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
     audioLevel.value = 0
   }
 
-  function stopCapture(finalizeRecognizer: boolean) {
+  function stopCapture() {
     startGeneration += 1
     loading.value = false
     listening.value = false
@@ -273,14 +295,8 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
 
     const activeRecognizer = recognizer
     recognizer = null
-    if (activeRecognizer) {
-      if (finalizeRecognizer) {
-        removeRecognizerAfterFinal(activeRecognizer)
-        activeRecognizer.retrieveFinalResult()
-      } else {
-        activeRecognizer.remove()
-      }
-    }
+    activeRecognizer?.remove()
+    terminateModel()
 
     const activeContext = context
     context = null
@@ -288,13 +304,13 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
   }
 
   function stop() {
-    stopCapture(true)
+    stopCapture()
   }
 
   function handleRecognitionFailure(activeRecognizer: KaldiRecognizer) {
     if (recognizer !== activeRecognizer) return
     error.value = 'recognition-failed'
-    stopCapture(false)
+    stopCapture()
   }
 
   async function connectWorklet(
@@ -338,12 +354,17 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
           reportAudioLevel(event.data.peak)
           return
         }
+        if (isAudioMirrorMessage(event.data)) {
+          options.onAudioChunk?.(event.data.samples, event.data.sampleRate)
+          return
+        }
         if (
           isAudioChunkMessage(event.data) &&
           transport.value === 'compatible' &&
           recognizer === activeRecognizer
         ) {
           try {
+            options.onAudioChunk?.(event.data.samples, event.data.sampleRate)
             activeRecognizer.acceptWaveformFloat(
               event.data.samples,
               event.data.sampleRate,
@@ -355,7 +376,11 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
       }
       activeWorklet.onprocessorerror = () => handleRecognitionFailure(activeRecognizer)
       activeWorklet.port.postMessage(
-        { action: 'init', recognizerId: activeRecognizer.id },
+        {
+          action: 'init',
+          recognizerId: activeRecognizer.id,
+          mirrorAudio: typeof options.onAudioChunk === 'function',
+        },
         [channel.port2],
       )
       activeWorklet.connect(silentGain as GainNode)
@@ -389,6 +414,7 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
           peak = Math.max(peak, Math.abs(samples[index]))
         }
         reportAudioLevel(peak)
+        options.onAudioChunk?.(samples.slice(), activeContext.sampleRate)
         activeRecognizer.acceptWaveform(event.inputBuffer)
       } catch {
         handleRecognitionFailure(activeRecognizer)
@@ -496,7 +522,11 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
       listening.value = true
       if (inputState.value === 'waiting') waitForAudioFrames()
     } catch (cause) {
-      if (generation === startGeneration) error.value = classifyStartupError(cause)
+      if (generation !== startGeneration) {
+        if (pendingContext.state !== 'closed') await pendingContext.close()
+        return
+      }
+      error.value = classifyStartupError(cause)
       disconnectAudioGraph()
       stopMediaStream(stream)
       stream = null
@@ -511,14 +541,7 @@ export function useVoskTranscription(options: UseVoskTranscriptionOptions) {
 
   function dispose() {
     disposed = true
-    stopCapture(false)
-    if (model) {
-      model.terminate()
-      model = null
-      modelPromise = null
-      return
-    }
-    void modelPromise?.then((loadedModel) => loadedModel.terminate()).catch(() => undefined)
+    stopCapture()
   }
 
   if (getCurrentInstance()) onBeforeUnmount(dispose)

@@ -47,7 +47,12 @@ export interface LiveSessionDetails {
 
 export interface SessionState {
   session: LiveSessionDetails
-  role: ParticipantRole
+  self?: Participant & {
+    kind?: 'account' | 'guest'
+    sessionId?: string
+  }
+  /** @deprecated Compatibility with pre-envelope gateway fixtures. */
+  role?: ParticipantRole
   canManage: boolean
   participants: Participant[]
   raisedHands: RaisedHand[]

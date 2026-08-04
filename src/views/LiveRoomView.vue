@@ -41,7 +41,7 @@ const captionState = computed<'available' | 'paused' | 'preparing' | 'listening'
   if (live.status.value !== 'connected') return 'reconnecting'
   if (transcription.loading.value) return 'preparing'
   if (transcription.listening.value) return 'listening'
-  return live.canManage.value ? 'paused' : 'available'
+  return live.canPublishTranscript.value ? 'paused' : 'available'
 })
 const meetingStatusLabel = computed(() => {
   if (live.ended.value) return 'Encerrada'
@@ -252,7 +252,7 @@ function trapPanelFocus(event: KeyboardEvent) {
         :inert="isCompactPanel && !!panel"
       >
         <MicControl
-          v-if="live.canManage.value && !live.ended.value"
+          v-if="live.canPublishTranscript.value"
           class="mic"
           :supported="transcription.supported"
           :listening="transcription.listening.value"
@@ -263,6 +263,8 @@ function trapPanelFocus(event: KeyboardEvent) {
           :audio-level="transcription.audioLevel.value"
           :transport="transcription.transport.value ?? undefined"
           :has-hypothesis="transcription.hasHypothesis.value"
+          :quality-status="transcription.qualityStatus.value"
+          :quality-progress="transcription.qualityProgress.value"
           :audio-devices-supported="audioInput.supported"
           :audio-devices="audioInput.devices.value"
           :selected-device-id="audioInput.selectedDeviceId.value"

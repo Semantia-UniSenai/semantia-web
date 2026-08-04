@@ -108,6 +108,42 @@ describe('MicControl', () => {
     expect(wrapper.find('.mic__status').text()).toContain('Transcrição local confirmada')
   })
 
+  it('shows local quality-model progress without claiming captions are blocked', () => {
+    const wrapper = mountMic({
+      listening: true,
+      localEngine: true,
+      inputState: 'receiving',
+      hasHypothesis: true,
+      qualityStatus: 'loading',
+      qualityProgress: 37,
+    } as any)
+
+    const quality = wrapper.find('.mic__quality')
+    expect(quality.exists()).toBe(true)
+    expect(quality.text()).toContain('37%')
+    expect(quality.text()).toContain('legendas rápidas continuam disponíveis')
+    expect(quality.text()).toContain('neste navegador')
+    expect(wrapper.find('.mic__quality-progress').attributes('aria-valuenow')).toBe('37')
+  })
+
+  it('announces ready, refining and graceful quality fallback as separate states', async () => {
+    const wrapper = mountMic({
+      listening: true,
+      localEngine: true,
+      qualityStatus: 'ready',
+    } as any)
+
+    expect(wrapper.find('.mic__quality').text()).toContain('Precisão local aprimorada pronta')
+
+    await wrapper.setProps({ qualityStatus: 'processing' } as any)
+    expect(wrapper.find('.mic__quality').text()).toContain('Refinando a última legenda localmente')
+    expect(wrapper.find('.mic__quality').text()).toContain('próximas falas continuam')
+
+    await wrapper.setProps({ qualityStatus: 'error' } as any)
+    expect(wrapper.find('.mic__quality').text()).toContain('Aprimoramento indisponível')
+    expect(wrapper.find('.mic__quality').text()).toContain('reconhecedor local rápido')
+  })
+
   it("error 'not-allowed' mostra a dica de permissão de microfone", () => {
     const wrapper = mountMic({ error: 'not-allowed' })
 
