@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { updateSessionContext, type AudienceContext } from '../api/sessions-context'
+import AudienceContextForm from '../components/live/AudienceContextForm.vue'
 import CaptionStage from '../components/live/CaptionStage.vue'
 import ChatPanel from '../components/live/ChatPanel.vue'
 import MicControl from '../components/live/MicControl.vue'
@@ -15,6 +17,7 @@ const inviteToken = computed(() => typeof route.query.token === 'string' ? route
 const live = useLiveSession()
 const copied = ref(false)
 const confirmingEnd = ref(false)
+const showContextForm = ref(false)
 type MeetingPanel = 'chat' | 'participants'
 
 const panel = ref<MeetingPanel | null>(null)
@@ -65,8 +68,33 @@ watch(() => live.ended.value, (ended) => {
 })
 
 async function startTranscription() {
+  if (live.canManage.value && !live.session.value?.audienceContext) {
+    showContextForm.value = true
+    return
+  }
   await audioInput.stopTest()
   await transcription.start(audioInput.selectedDeviceId.value)
+}
+
+async function saveContext(context: AudienceContext) {
+  const id = sessionId.value
+  try {
+    await updateSessionContext(id, context)
+    if (live.session.value) {
+      live.session.value = { ...live.session.value, audienceContext: context }
+    }
+  } catch {
+    // falha silenciosa — contexto é opcional; o host pode pular
+  } finally {
+    showContextForm.value = false
+    await audioInput.stopTest()
+    await transcription.start(audioInput.selectedDeviceId.value)
+  }
+}
+
+function skipContext() {
+  showContextForm.value = false
+  void audioInput.stopTest().then(() => transcription.start(audioInput.selectedDeviceId.value))
 }
 
 async function changeAudioInput(deviceId: string) {
@@ -144,6 +172,11 @@ function trapPanelFocus(event: KeyboardEvent) {
 </script>
 
 <template>
+  <AudienceContextForm
+    v-if="showContextForm"
+    @submit="saveContext"
+    @skip="skipContext"
+  />
   <main class="room" :class="{ 'room--panel-open': panel }">
     <a class="skip-link" href="#captions-main">Ir para a legenda</a>
     <header class="topbar" :inert="isCompactPanel && !!panel">

@@ -31,12 +31,21 @@ export interface TranscriptEntry {
   createdAt: string
 }
 
+export interface AudienceContext {
+  meetingType: string
+  ageRange: string
+  portugueseFamiliarity: string
+  domain: string
+  simplificationLevel: string
+}
+
 export interface LiveSessionDetails {
   id: string
   title: string
   roomId: string
   joinToken: string
   status: SessionStatus
+  audienceContext: AudienceContext | null
   createdAt: string
   startedAt: string | null
   endedAt: string | null
