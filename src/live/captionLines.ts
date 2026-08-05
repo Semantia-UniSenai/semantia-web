@@ -1,7 +1,7 @@
 /**
  * Quebra de frases da transcrição em linhas curtas (estilo karaokê).
  *
- * O Web Speech devolve finais "frase a frase", mas uma fala contínua pode
+ * O backend devolve finais em segmentos, mas uma fala contínua pode
  * fechar num final longo — na tela do aluno cada linha precisa ter poucas
  * palavras para leitura rápida. A quebra é balanceada: um final de 9 palavras
  * com máximo 7 vira 5+4, nunca 7+2 (evita linha órfã de uma palavra).

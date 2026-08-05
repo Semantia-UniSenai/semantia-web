@@ -17,6 +17,8 @@ let audioMock: ReturnType<typeof createAudioMock>
 let transcriptionMock: ReturnType<typeof createTranscriptionMock>
 let transcriptionOptions: {
   onAudioSegment?: (segment: unknown) => Promise<unknown>
+  onPartial?: unknown
+  onFinal?: unknown
 } | null
 let compactViewport = false
 
@@ -84,18 +86,16 @@ function createLiveMock() {
     raisedHands: ref<RaisedHand[]>([]),
     chat: ref<ChatMessage[]>([]),
     transcript: ref<TranscriptEntry[]>([]),
-    partialText: ref(''),
+    pendingAudioCount: ref(0),
+    transcriptionStatus: ref(null),
     ended,
     canPublishTranscript: computed(() => role.value === 'HOST' && !ended.value),
     joined: computed(() => true),
     currentParticipantId: ref<string | null>('host-1'),
     connect: vi.fn(),
     disconnect: vi.fn(),
-    publishPartial: vi.fn(),
-    publishFinal: vi.fn(),
     publishAudioSegment: vi.fn().mockResolvedValue({ ok: true }),
-    pendingAudioCount: ref(0),
-    transcriptionStatus: ref(null),
+    waitForAudioDrain: vi.fn().mockResolvedValue(true),
     sendChat: vi.fn(),
     raiseHand: vi.fn(),
     lowerHand: vi.fn(),
@@ -126,13 +126,9 @@ function createTranscriptionMock() {
     listening: ref(false),
     loading: ref(false),
     error: ref<string | null>(null),
-    engine: ref<'browser' | 'local' | null>(null),
-    inputState: ref<'idle' | 'waiting' | 'silent' | 'receiving'>('idle'),
+    inputState: ref<'idle' | 'waiting' | 'receiving'>('idle'),
     audioLevel: ref(0),
-    transport: ref<'direct' | 'switching' | 'compatible' | null>(null),
-    hasHypothesis: ref(false),
-    qualityStatus: ref<'idle' | 'loading' | 'ready' | 'refining' | 'fallback'>('idle'),
-    qualityProgress: ref(0),
+    qualityStatus: ref<'idle' | 'ready' | 'processing' | 'error'>('idle'),
     start: vi.fn(),
     stop: vi.fn(),
   }
@@ -184,8 +180,10 @@ beforeEach(() => {
 })
 
 describe('LiveRoomView accessible stage layout', () => {
-  it('encaminha segmentos PCM ao backend da sessão', async () => {
+  it('encaminha somente segmentos PCM ao backend, sem callbacks textuais no cliente', async () => {
     mountRoom()
+    expect(transcriptionOptions).not.toHaveProperty('onPartial')
+    expect(transcriptionOptions).not.toHaveProperty('onFinal')
     const segment = {
       pcm16: new ArrayBuffer(32_000),
       sampleRate: 16_000 as const,

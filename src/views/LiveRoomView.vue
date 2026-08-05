@@ -25,17 +25,14 @@ const participantsTrigger = ref<HTMLButtonElement | null>(null)
 const isCompactPanel = ref(false)
 let lastPanelTrigger: MeetingPanel = 'chat'
 let panelMediaQuery: MediaQueryList | null = null
-const startedAt = Date.now()
 
 const audioInput = useAudioInputDevices()
 const transcription = useMeetingTranscription({
   deviceId: audioInput.selectedDeviceId,
-  onPartial: (text) => void live.publishPartial(text),
-  onFinal: (text) => void live.publishFinal(text, Date.now() - startedAt),
   onAudioSegment: (segment) => live.publishAudioSegment(segment),
 })
 
-const asrQualityStatus = computed<'idle' | 'loading' | 'ready' | 'processing' | 'error'>(() => {
+const asrQualityStatus = computed<'idle' | 'ready' | 'processing' | 'error'>(() => {
   const backendState = live.transcriptionStatus.value?.state
   if (live.pendingAudioCount.value > 0 || backendState === 'processing') return 'processing'
   if (backendState === 'failed') return 'error'
@@ -68,7 +65,7 @@ onMounted(() => {
 onBeforeUnmount(() => panelMediaQuery?.removeEventListener('change', syncPanelMode))
 watch(() => live.ended.value, (ended) => {
   if (ended) {
-    transcription.stop()
+    void transcription.stop({ flush: false })
     void audioInput.stopTest()
   }
 })
@@ -96,15 +93,17 @@ async function end() {
     window.setTimeout(() => (confirmingEnd.value = false), 3000)
     return
   }
-  transcription.stop()
+  await transcription.stop({ flush: true })
+  if (live.status.value === 'connected') await live.waitForAudioDrain()
   await audioInput.stopTest()
   await live.endSession()
   confirmingEnd.value = false
 }
 
-function leave() {
-  transcription.stop()
-  void audioInput.stopTest()
+async function leave() {
+  await transcription.stop({ flush: true })
+  if (live.status.value === 'connected') await live.waitForAudioDrain()
+  await audioInput.stopTest()
   live.disconnect()
   if (live.role.value === 'GUEST') router.push('/')
   else router.push(backTo.value)
@@ -209,9 +208,7 @@ function trapPanelFocus(event: KeyboardEvent) {
         >
           <CaptionStage
             :transcript="live.transcript.value"
-            :partial-text="live.partialText.value"
             :caption-state="captionState"
-            backend-asr
           />
         </section>
 
@@ -268,14 +265,9 @@ function trapPanelFocus(event: KeyboardEvent) {
           :listening="transcription.listening.value"
           :loading="transcription.loading.value"
           :error="transcription.error.value"
-          :local-engine="transcription.engine.value === 'local'"
           :input-state="transcription.inputState.value"
           :audio-level="transcription.audioLevel.value"
-          :transport="transcription.transport.value ?? undefined"
-          :has-hypothesis="transcription.hasHypothesis.value"
           :quality-status="asrQualityStatus"
-          :quality-progress="transcription.qualityProgress.value"
-          backend-asr
           :pending-audio-count="live.pendingAudioCount.value"
           :backend-engine="live.transcriptionStatus.value?.engine ?? undefined"
           :backend-model="live.transcriptionStatus.value?.model ?? undefined"

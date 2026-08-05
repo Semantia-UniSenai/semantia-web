@@ -17,14 +17,9 @@ const props = withDefaults(
     loading?: boolean
     error: string | null
     disabled?: boolean
-    localEngine?: boolean
-    inputState?: 'idle' | 'waiting' | 'silent' | 'receiving'
+    inputState?: 'idle' | 'waiting' | 'receiving'
     audioLevel?: number
-    transport?: 'direct' | 'switching' | 'compatible'
-    hasHypothesis?: boolean
-    qualityStatus?: 'idle' | 'loading' | 'ready' | 'processing' | 'error'
-    qualityProgress?: number
-    backendAsr?: boolean
+    qualityStatus?: 'idle' | 'ready' | 'processing' | 'error'
     pendingAudioCount?: number
     backendEngine?: string
     backendModel?: string
@@ -45,8 +40,6 @@ const props = withDefaults(
     microphoneTestState: 'idle',
     microphoneTestLevel: 0,
     qualityStatus: 'idle',
-    qualityProgress: 0,
-    backendAsr: false,
     pendingAudioCount: 0,
   },
 )
@@ -100,21 +93,17 @@ function selectAudioDevice(event: Event) {
 const ERROR_HINTS: Record<string, string> = {
   'not-allowed':
     'Permissão de microfone negada. Libere o microfone nas configurações do site e tente de novo.',
-  'service-not-allowed':
-    'O serviço de voz nativo foi bloqueado. A transcrição local será iniciada.',
-  'audio-capture': 'Nenhum microfone encontrado. Conecte um microfone e tente de novo.',
-  'start-failed': 'Não foi possível iniciar a captura nativa. Tentando transcrição local.',
-  network: 'O serviço de voz nativo não respondeu. A transcrição local será iniciada.',
-  'no-speech-limit':
-    'O reconhecimento nativo encerrou repetidamente sem texto. A transcrição local será iniciada sem trocar de navegador.',
-  'model-load-failed':
-    'Não foi possível carregar o modelo local de transcrição. Verifique a conexão e tente novamente.',
-  'recognition-failed':
-    'O reconhecimento local foi interrompido. Inicie a transcrição novamente.',
-  'recognition-no-results':
-    'Sua voz foi detectada, mas o reconhecedor não produziu texto após tentar os dois modos locais. Confira o microfone, fale uma frase mais longa e tente novamente.',
+  'not-found': 'Nenhum microfone disponível. Conecte um dispositivo e tente novamente.',
+  'not-readable': 'O microfone está ocupado ou indisponível em outro aplicativo.',
+  overconstrained: 'A entrada selecionada não está mais disponível.',
+  unavailable: 'A captura exige conexão segura e suporte à API de mídia.',
+  'audio-capture': 'Não foi possível capturar o microfone selecionado.',
+  'audio-processing-failed': 'O processamento PCM do microfone foi interrompido.',
   'audio-processing-stalled':
-    'O microfone foi permitido, mas nenhum áudio chegou ao transcritor. Confira a entrada selecionada e tente novamente.',
+    'O microfone foi permitido, mas nenhum áudio chegou à captura. Confira a entrada selecionada e tente novamente.',
+  AUDIO_QUEUE_FULL: 'A fila temporária está cheia. Pause e aguarde o backend concluir os segmentos.',
+  AUDIO_EXPIRED: 'Um segmento temporário expirou antes de ser processado.',
+  AUDIO_DELIVERY_FAILED: 'Não foi possível confirmar o processamento do áudio no backend.',
 }
 
 const AUDIO_DEVICE_ERROR_HINTS: Record<AudioInputError, string> = {
@@ -233,9 +222,8 @@ const AUDIO_DEVICE_ERROR_HINTS: Record<AudioInputError, string> = {
               <path d="m7 10 5 5 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
           </div>
-          <p v-if="localSelectedDeviceId !== 'default'" class="mic__local-note">
-            <template v-if="backendAsr">A entrada selecionada é capturada neste navegador; os finais são processados pelo ASR protegido do backend.</template>
-            <template v-else>Para respeitar esta entrada, a transcrição usa processamento local no navegador.</template>
+          <p v-if="localSelectedDeviceId !== 'default'" class="mic__backend-note">
+            A entrada selecionada é capturada neste navegador e enviada em janelas efêmeras ao ASR protegido do backend.
           </p>
         </div>
 
@@ -295,84 +283,40 @@ const AUDIO_DEVICE_ERROR_HINTS: Record<AudioInputError, string> = {
 
       <p
         class="mic__status"
-        :class="{
-          live: listening,
-          receiving: listening && inputState === 'receiving',
-          warning: listening && inputState === 'silent',
-          recovering: listening && transport === 'switching',
-        }"
+        :class="{ live: listening, receiving: listening && inputState === 'receiving' }"
         role="status"
       >
-        <template v-if="loading">Preparando o modelo de português. Na primeira vez pode levar até cerca de um minuto; reunião e chat continuam disponíveis.</template>
-        <template v-else-if="listening && localEngine && inputState === 'waiting'">Microfone autorizado. Conectando o processamento de áudio…</template>
-        <template v-else-if="listening && localEngine && transport === 'switching'">Ajustando compatibilidade automaticamente — mantenha o microfone ativo…</template>
-        <template v-else-if="listening && localEngine && inputState === 'silent'">Microfone conectado, mas sem sinal de voz. Fale normalmente ou confira a entrada selecionada.</template>
-        <template v-else-if="listening && localEngine && inputState === 'receiving' && hasHypothesis">
-          {{ backendAsr ? 'Prévia local ativa — o servidor confirmará o texto final.' : 'Transcrição local confirmada — o texto está sendo exibido em tempo real.' }}
-        </template>
-        <template v-else-if="listening && localEngine && inputState === 'receiving' && transport === 'compatible'">Modo compatível ativo — áudio recebido, aguardando a primeira hipótese textual.</template>
-        <template v-else-if="listening && localEngine && inputState === 'receiving'">Sinal de voz detectado — aguardando a primeira hipótese textual.</template>
-        <template v-else-if="listening">Transcrevendo — a plateia está vendo sua fala em texto.</template>
-        <template v-else>Microfone pausado. A plateia não recebe texto novo.</template>
+        <template v-if="loading">Solicitando acesso ao microfone e preparando a captura PCM…</template>
+        <template v-else-if="listening && inputState === 'waiting'">Microfone autorizado. Conectando a captura de áudio…</template>
+        <template v-else-if="listening && inputState === 'receiving'">Capturando áudio em janelas de 5 segundos; somente o servidor produz e publica o texto.</template>
+        <template v-else-if="listening">Captura ativa; aguardando os primeiros frames do microfone.</template>
+        <template v-else>Microfone pausado. Nenhum áudio novo é enviado.</template>
       </p>
       <div
-        v-if="listening && localEngine && qualityStatus !== 'idle'"
+        v-if="listening && qualityStatus !== 'idle'"
         class="mic__quality"
         role="status"
         aria-live="polite"
       >
-        <template v-if="backendAsr">
-          <template v-if="qualityStatus === 'loading'">
-            <strong>Preparando o ASR do backend…</strong>
-            <span>A captura local continua enquanto o serviço fica disponível.</span>
-          </template>
-          <template v-else-if="qualityStatus === 'processing'">
-            <strong>Processando {{ pendingAudioCount }} {{ pendingAudioCount === 1 ? 'segmento' : 'segmentos' }} no backend…</strong>
-            <span>As próximas falas continuam sendo capturadas em uma fila limitada.</span>
-          </template>
-          <template v-else-if="qualityStatus === 'ready'">
-            <strong>ASR do backend pronto</strong>
-            <span>As prévias são locais; somente o servidor publica o texto final canônico.</span>
-          </template>
-          <template v-else>
-            <strong>Processamento final temporariamente indisponível</strong>
-            <span>Nenhum final local de baixa qualidade será publicado silenciosamente.</span>
-          </template>
-          <span v-if="backendEngine">
-            Motor: {{ backendEngine }}<template v-if="backendModel">/{{ backendModel }}</template><template v-if="backendInferenceMs != null"> · {{ backendInferenceMs }} ms</template>
-          </span>
-          <small>O áudio é enviado em segmentos efêmeros e descartado após o processamento; não é gravado por padrão.</small>
+        <template v-if="qualityStatus === 'processing'">
+          <strong>Processando {{ pendingAudioCount }} {{ pendingAudioCount === 1 ? 'segmento' : 'segmentos' }} no backend…</strong>
+          <span>As próximas janelas continuam em uma fila efêmera e limitada.</span>
+        </template>
+        <template v-else-if="qualityStatus === 'ready'">
+          <strong>ASR do backend pronto</strong>
+          <span>Somente o servidor converte o áudio em texto final canônico.</span>
         </template>
         <template v-else>
-          <template v-if="qualityStatus === 'loading'">
-            <strong>Aprimorando a precisão local — {{ Math.round(qualityProgress) }}%</strong>
-            <span>O modelo de qualidade é preparado em segundo plano; as legendas rápidas continuam disponíveis.</span>
-            <div
-              class="mic__quality-progress"
-              role="progressbar"
-              aria-label="Preparação do modelo local de qualidade"
-              aria-valuemin="0"
-              aria-valuemax="100"
-              :aria-valuenow="Math.round(qualityProgress)"
-            ><span :style="{ width: `${Math.round(qualityProgress)}%` }"></span></div>
-          </template>
-          <template v-else-if="qualityStatus === 'processing'">
-            <strong>Refinando a última legenda localmente…</strong>
-            <span>As próximas falas continuam sendo capturadas.</span>
-          </template>
-          <template v-else-if="qualityStatus === 'ready'">
-            <strong>Precisão local aprimorada pronta</strong>
-            <span>Os resultados finais são revisados antes da publicação.</span>
-          </template>
-          <template v-else>
-            <strong>Aprimoramento indisponível</strong>
-            <span>Os resultados finais continuam pelo reconhecedor local rápido.</span>
-          </template>
-          <small>O áudio permanece neste navegador e não é enviado ao servidor.</small>
+          <strong>Processamento de transcrição indisponível</strong>
+          <span>A falha fica visível e nenhum texto alternativo é inventado no cliente.</span>
         </template>
+        <span v-if="backendEngine">
+          Motor: {{ backendEngine }}<template v-if="backendModel">/{{ backendModel }}</template><template v-if="backendInferenceMs != null"> · {{ backendInferenceMs }} ms</template>
+        </span>
+        <small>O áudio é enviado em segmentos efêmeros e descartado após o processamento; não é gravado por padrão.</small>
       </div>
       <div
-        v-if="listening && localEngine && inputState !== 'waiting'"
+        v-if="listening && inputState === 'receiving'"
         class="mic__meter"
         role="progressbar"
         aria-label="Nível do microfone"

@@ -12,9 +12,7 @@ import type { TranscriptEntry } from '../../live/types'
  */
 const props = defineProps<{
   transcript: TranscriptEntry[]
-  partialText: string
   captionState?: 'available' | 'paused' | 'preparing' | 'listening' | 'reconnecting' | 'ended'
-  backendAsr?: boolean
   /** Modo compacto (preview do comunicador). */
   compact?: boolean
 }>()
@@ -26,16 +24,12 @@ const captionStatus = computed(() => {
     case 'preparing':
       return {
         label: 'Preparando transcrição',
-        detail: props.backendAsr
-          ? 'Preparando a captura local e a confirmação final pelo servidor.'
-          : 'Carregando o reconhecimento local neste navegador.',
+        detail: 'Preparando a captura segura de áudio.',
       }
     case 'listening':
       return {
         label: 'Transcrição ativa',
-        detail: props.backendAsr
-          ? 'A prévia é local; o servidor processa e confirma o texto final.'
-          : 'O áudio é processado somente neste navegador.',
+        detail: 'O servidor processa o áudio e publica somente o texto final.',
       }
     case 'reconnecting':
       return { label: 'Reconectando', detail: 'A última legenda permanece disponível.' }
@@ -104,7 +98,7 @@ function scrollToLive(behavior: ScrollBehavior = 'smooth') {
 
 // Segue o vivo enquanto o leitor estiver no fim (não rouba a rolagem de quem relê).
 watch(
-  () => [props.transcript.length, props.partialText] as const,
+  () => props.transcript.length,
   async () => {
     if (!pinned.value) return
     await nextTick()
@@ -159,7 +153,7 @@ watch(
       tabindex="0"
       @scroll.passive="onScroll"
     >
-      <p v-if="lines.length === 0 && !partialText" class="captions__waiting">
+      <p v-if="lines.length === 0" class="captions__waiting">
         Aguardando o comunicador falar…
       </p>
       <template v-else>
@@ -168,18 +162,9 @@ watch(
             v-for="(line, i) in lines"
             :key="line.key"
             class="captions__line"
-            :class="{
-              'captions__line--current': i === lines.length - 1 && !partialText,
-            }"
+            :class="{ 'captions__line--current': i === lines.length - 1 }"
           >
             {{ line.text }}
-          </p>
-          <p
-            v-if="partialText"
-            key="partial"
-            class="captions__line captions__line--partial"
-          >
-            {{ partialText }}
           </p>
         </transition-group>
       </template>
@@ -307,10 +292,6 @@ watch(
 .captions__line--current {
   opacity: 1;
   color: #fff;
-}
-.captions__line--partial {
-  opacity: 1;
-  color: #9fb6e8;
 }
 /* Linha nova entra deslizando de baixo (karaokê). */
 .line-enter-active {

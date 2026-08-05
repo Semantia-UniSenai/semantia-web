@@ -1,233 +1,65 @@
 import { computed, getCurrentInstance, onBeforeUnmount, ref, watch } from 'vue'
 import type { Ref } from 'vue'
-import { useSpeechRecognition } from './useSpeechRecognition'
-import { useVoskTranscription } from './useVoskTranscription'
-import { useLocalWhisperFinalizer } from './useLocalWhisperFinalizer'
 import {
   useBackendAudioFinalizer,
   type BackendAudioSegment,
 } from './useBackendAudioFinalizer'
+import { usePcmAudioCapture } from './usePcmAudioCapture'
 
 export interface UseMeetingTranscriptionOptions {
-  lang?: string
-  modelUrl?: string
   deviceId?: Readonly<Ref<string>>
-  onPartial: (text: string) => void
-  onFinal: (text: string) => void
-  onAudioSegment?: (
+  onAudioSegment: (
     segment: BackendAudioSegment,
   ) => Promise<{ ok: boolean; error?: { code: string; message: string } }>
 }
 
-type TranscriptionEngine = 'browser' | 'local' | null
-const LOCAL_FALLBACK_ERRORS = new Set([
-  'network',
-  'service-not-allowed',
-  'start-failed',
-  'local-unavailable',
-  'no-speech-limit',
-])
-const PARTIAL_THROTTLE_MS = 250
-const FINAL_DEDUPLICATION_MS = 2_000
-
-function normalizeTranscriptText(text: string) {
-  return text.trim().replace(/\s+/g, ' ')
-}
-
 export function useMeetingTranscription(options: UseMeetingTranscriptionOptions) {
-  let partialTimer: ReturnType<typeof setTimeout> | null = null
-  let pendingPartial = ''
-  let lastPartial = ''
-  let lastFinal = ''
-  let lastFinalAt: number | null = null
+  const active = ref(false)
+  let activeDeviceId = 'default'
   let lifecycleGeneration = 0
-  let captureActive = false
 
-  function schedulePartialWindow() {
-    partialTimer = setTimeout(() => {
-      partialTimer = null
-      if (!pendingPartial || pendingPartial === lastPartial) {
-        pendingPartial = ''
-        return
-      }
-      const text = pendingPartial
-      pendingPartial = ''
-      lastPartial = text
-      options.onPartial(text)
-      schedulePartialWindow()
-    }, PARTIAL_THROTTLE_MS)
-  }
-
-  function handlePartial(rawText: string) {
-    if (!captureActive) return
-    const text = normalizeTranscriptText(rawText)
-    if (!text || text === lastPartial || text === pendingPartial) return
-    if (partialTimer) {
-      pendingPartial = text
-      return
-    }
-    lastPartial = text
-    options.onPartial(text)
-    schedulePartialWindow()
-  }
-
-  function resetPartialEmission() {
-    if (partialTimer) clearTimeout(partialTimer)
-    partialTimer = null
-    pendingPartial = ''
-    lastPartial = ''
-  }
-
-  function handleFinal(rawText: string) {
-    if (!captureActive) return
-    const text = normalizeTranscriptText(rawText)
-    if (!text) return
-    const now = Date.now()
-    if (
-      text === lastFinal &&
-      lastFinalAt !== null &&
-      now - lastFinalAt <= FINAL_DEDUPLICATION_MS
-    ) {
-      return
-    }
-    resetPartialEmission()
-    lastFinal = text
-    lastFinalAt = now
-    options.onFinal(text)
-  }
-
-  function resetEmission() {
-    resetPartialEmission()
-    lastFinal = ''
-    lastFinalAt = null
-  }
-
-  const browser = useSpeechRecognition({
-    lang: options.lang,
-    localOnly: true,
-    onPartial: handlePartial,
-    onFinal: handleFinal,
+  const backend = useBackendAudioFinalizer({
+    publish: options.onAudioSegment,
+    segmentSeconds: 5,
   })
-  const quality = useLocalWhisperFinalizer()
-  const backendEnabled = typeof options.onAudioSegment === 'function'
-  const backendQuality = useBackendAudioFinalizer({
-    publish:
-      options.onAudioSegment ??
-      (async () => ({
-        ok: false,
-        error: { code: 'ASR_DISABLED', message: 'Backend ASR is not configured' },
-      })),
-  })
-
-  async function handleLocalFinal(rawText: string) {
-    if (!captureActive) return
-    const generation = lifecycleGeneration
-    if (backendEnabled) {
-      await backendQuality.finalizeSegment()
-      if (!captureActive || generation !== lifecycleGeneration) return
-      resetPartialEmission()
-      return
-    }
-    const result = await quality.finalizeSegment(rawText)
-    if (!captureActive || generation !== lifecycleGeneration || !result.text) return
-    handleFinal(result.text)
-  }
-
-  const local = useVoskTranscription({
-    modelUrl: options.modelUrl,
-    onPartial: handlePartial,
-    onFinal: (text) => void handleLocalFinal(text),
+  const capture = usePcmAudioCapture({
     onAudioChunk: (samples, sampleRate) => {
-      if (backendEnabled) backendQuality.addAudioChunk(samples, sampleRate)
-      else quality.addAudioChunk(samples, sampleRate)
+      backend.addAudioChunk(samples, sampleRate)
     },
   })
-  const engine = ref<TranscriptionEngine>(null)
-  let activeDeviceId = 'default'
-  const supported = backendEnabled ? local.supported : browser.supported || local.supported
-  const listening = computed(
-    () => browser.listening.value || local.listening.value,
-  )
-  const loading = computed(
-    () => engine.value === 'local' && local.loading.value,
-  )
-  const inputState = computed(() => {
-    if (engine.value === 'local') return local.inputState.value
-    return browser.listening.value ? 'receiving' : 'idle'
-  })
-  const audioLevel = computed(() =>
-    engine.value === 'local' ? local.audioLevel.value : 0,
-  )
-  const transport = computed(() =>
-    engine.value === 'local' ? local.transport.value : null,
-  )
-  const hasHypothesis = computed(() =>
-    engine.value === 'local' ? local.hasHypothesis.value : false,
-  )
-  const error = computed(() => {
-    if (engine.value === 'browser') return browser.error.value
-    if (engine.value === 'local') return local.error.value
-    return null
-  })
 
-  async function startLocal() {
-    engine.value = 'local'
-    if (backendEnabled) backendQuality.start()
-    else quality.start()
-    await local.start(activeDeviceId)
-  }
+  const error = computed(() => capture.error.value ?? backend.error.value)
 
   async function start(deviceId = options.deviceId?.value ?? 'default') {
     const generation = ++lifecycleGeneration
-    captureActive = true
     activeDeviceId = deviceId || 'default'
-    const hasSpecificInput = activeDeviceId !== 'default'
-    if (!backendEnabled && browser.supported && !hasSpecificInput) {
-      const browserStarted = await browser.start()
-      if (!captureActive || generation !== lifecycleGeneration) return
-      if (browserStarted) {
-        engine.value = 'browser'
-        return
-      }
+    backend.start()
+    active.value = true
+    const started = await capture.start(activeDeviceId)
+    if (generation !== lifecycleGeneration) return false
+    if (!started) {
+      await backend.stop()
+      active.value = false
+      return false
     }
-    if (!captureActive || generation !== lifecycleGeneration) return
-    if (local.supported) {
-      await startLocal()
-    }
+    return true
   }
 
-  function stop() {
-    captureActive = false
-    lifecycleGeneration += 1
-    resetEmission()
-    browser.stop()
-    local.stop()
-    if (backendEnabled) backendQuality.stop()
-    else quality.stop()
-    engine.value = null
+  async function stop(stopOptions: { flush?: boolean } = { flush: true }) {
+    const generation = ++lifecycleGeneration
+    capture.stop()
+    await backend.stop({ flush: stopOptions.flush ?? true })
+    if (generation === lifecycleGeneration) active.value = false
   }
 
   async function changeDevice(deviceId: string) {
-    const wasActive = listening.value || loading.value
     activeDeviceId = deviceId || 'default'
+    const wasActive = capture.listening.value || capture.loading.value || active.value
     if (!wasActive) return
-    stop()
+    await stop({ flush: true })
     await start(activeDeviceId)
   }
 
-  const stopErrorWatch = watch(browser.error, async (value) => {
-    if (
-      engine.value !== 'browser' ||
-      !value ||
-      !LOCAL_FALLBACK_ERRORS.has(value) ||
-      !local.supported
-    ) {
-      return
-    }
-    browser.stop()
-    lifecycleGeneration += 1
-    await startLocal()
-  })
   const stopDeviceWatch = options.deviceId
     ? watch(options.deviceId, async (deviceId) => {
         await changeDevice(deviceId)
@@ -236,32 +68,20 @@ export function useMeetingTranscription(options: UseMeetingTranscriptionOptions)
 
   if (getCurrentInstance()) {
     onBeforeUnmount(() => {
-      stopErrorWatch()
       stopDeviceWatch()
-      stop()
+      void stop({ flush: false })
     })
   }
 
   return {
-    supported,
-    listening,
-    loading,
+    supported: capture.supported,
+    listening: capture.listening,
+    loading: capture.loading,
     error,
-    inputState,
-    audioLevel,
-    transport,
-    hasHypothesis,
-    qualityStatus: computed(() =>
-      backendEnabled ? backendQuality.status.value : quality.status.value,
-    ),
-    qualityProgress: computed(() => (backendEnabled ? 100 : quality.progress.value)),
-    qualityError: computed(() =>
-      backendEnabled ? backendQuality.error.value : quality.error.value,
-    ),
-    qualityInferenceMs: computed(() =>
-      backendEnabled ? null : quality.lastInferenceMs.value,
-    ),
-    engine: computed(() => engine.value),
+    inputState: capture.inputState,
+    audioLevel: capture.audioLevel,
+    qualityStatus: computed(() => backend.status.value),
+    qualityError: computed(() => backend.error.value),
     start,
     stop,
     changeDevice,

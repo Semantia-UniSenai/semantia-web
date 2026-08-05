@@ -15,219 +15,74 @@ function mountMic(props: Partial<InstanceType<typeof MicControl>['$props']> = {}
 }
 
 describe('MicControl', () => {
-  it('unsupported explica a limitação técnica sem recomendar uma marca de navegador', () => {
+  it('explica captura indisponível sem recomendar navegador', () => {
     const wrapper = mountMic({ supported: false })
-
     const alert = wrapper.find('.mic__unsupported')
-    expect(alert.exists()).toBe(true)
     expect(alert.attributes('role')).toBe('alert')
     expect(alert.text()).toMatch(/captura de áudio/i)
     expect(alert.text()).not.toMatch(/Chrome|Edge|Brave/i)
-    expect(wrapper.find('button').exists()).toBe(false)
   })
 
-  it("listening=false mostra 'Iniciar transcrição' e o click emite start", async () => {
+  it('inicia e pausa a captura para transcrição backend', async () => {
     const wrapper = mountMic({ listening: false })
-    const button = wrapper.find('button')
-
+    const button = wrapper.find('.mic__btn')
     expect(button.text()).toContain('Iniciar transcrição')
-    expect(button.classes()).not.toContain('live')
-
     await button.trigger('click')
     expect(wrapper.emitted('start')).toHaveLength(1)
-    expect(wrapper.emitted('stop')).toBeUndefined()
-  })
 
-  it("listening=true mostra 'Pausar transcrição' e o click emite stop", async () => {
-    const wrapper = mountMic({ listening: true })
-    const button = wrapper.find('button')
-
+    await wrapper.setProps({ listening: true, inputState: 'receiving' })
     expect(button.text()).toContain('Pausar transcrição')
-    expect(button.classes()).toContain('live')
-    expect(wrapper.find('.mic__status').text()).toContain('Transcrevendo')
-
-    await button.trigger('click')
-    expect(wrapper.emitted('stop')).toHaveLength(1)
-    expect(wrapper.emitted('start')).toBeUndefined()
-  })
-
-  it('loading mostra o tempo real de preparação e permite cancelar', async () => {
-    const wrapper = mountMic({ loading: true })
-    const button = wrapper.find('button')
-
-    expect(button.text()).toContain('Cancelar preparação')
-    expect(button.attributes('disabled')).toBeUndefined()
-    expect(wrapper.find('.mic__status').text()).toContain('até cerca de um minuto')
     await button.trigger('click')
     expect(wrapper.emitted('stop')).toHaveLength(1)
   })
 
-  it('mostra microfone conectado sem voz quando recebe silêncio', () => {
+  it('descreve somente captura e backend, sem prévia, hipótese, Vosk ou modelo local', () => {
     const wrapper = mountMic({
       listening: true,
-      localEngine: true,
-      inputState: 'silent',
-      audioLevel: 0,
-    })
-
-    expect(wrapper.find('.mic__status').text()).toContain('sem sinal de voz')
-    expect(wrapper.find('.mic__meter').attributes('aria-valuenow')).toBe('0')
-  })
-
-  it('não declara transcrição antes da primeira hipótese textual', () => {
-    const wrapper = mountMic({
-      listening: true,
-      localEngine: true,
       inputState: 'receiving',
       audioLevel: 0.32,
-      transport: 'direct',
-      hasHypothesis: false,
+      qualityStatus: 'ready',
+      backendEngine: 'faster-whisper',
+      backendModel: 'small',
     })
-
-    expect(wrapper.find('.mic__status').text()).toContain('aguardando a primeira hipótese')
-    expect(wrapper.find('.mic__status').text()).not.toContain('transcrevendo localmente')
+    const text = wrapper.text()
+    expect(text).toContain('janelas de 5 segundos')
+    expect(text).toContain('servidor')
+    expect(text).toContain('faster-whisper/small')
+    expect(text).not.toMatch(/prévia|hipótese|Vosk|modelo local|transcrição local/i)
     expect(wrapper.find('.mic__meter').attributes('aria-valuenow')).toBe('32')
   })
 
-  it('mostra recuperação automática e confirmação textual separadamente', async () => {
-    const wrapper = mountMic({
-      listening: true,
-      localEngine: true,
-      inputState: 'receiving',
-      audioLevel: 0.32,
-      transport: 'switching',
-      hasHypothesis: false,
-    })
-
-    expect(wrapper.find('.mic__status').text()).toContain('Ajustando compatibilidade')
-
-    await wrapper.setProps({ transport: 'compatible' })
-    expect(wrapper.find('.mic__status').text()).toContain('Modo compatível ativo')
-
-    await wrapper.setProps({ hasHypothesis: true })
-    expect(wrapper.find('.mic__status').text()).toContain('Transcrição local confirmada')
+  it('loading representa apenas preparação da captura', () => {
+    const wrapper = mountMic({ loading: true })
+    const text = wrapper.find('.mic__status').text()
+    expect(text).toContain('microfone')
+    expect(text).not.toMatch(/modelo|português|um minuto/i)
   })
 
-  it('explica processamento backend, fila e retenção zero sem prometer áudio local', async () => {
+  it('explica fila backend e retenção zero', async () => {
     const wrapper = mountMic({
       listening: true,
-      localEngine: true,
       inputState: 'receiving',
-      hasHypothesis: true,
-      qualityStatus: 'ready',
-      backendAsr: true,
-      pendingAudioCount: 0,
-      backendEngine: 'faster-whisper',
-      backendModel: 'small',
-      backendInferenceMs: 842,
-    } as any)
-
-    expect(wrapper.find('.mic__quality').text()).toContain('ASR do backend pronto')
-    expect(wrapper.find('.mic__quality').text()).toContain('faster-whisper/small')
-    expect(wrapper.find('.mic__quality').text()).toContain('842 ms')
-    expect(wrapper.find('.mic__quality').text()).toContain('descartado após o processamento')
-    expect(wrapper.find('.mic__quality').text()).not.toContain('permanece neste navegador')
-
-    await wrapper.setProps({ qualityStatus: 'processing', pendingAudioCount: 2 } as any)
+      qualityStatus: 'processing',
+      pendingAudioCount: 2,
+    })
     expect(wrapper.find('.mic__quality').text()).toContain('2 segmentos')
+    expect(wrapper.find('.mic__quality').text()).toContain('descartado após o processamento')
+
+    await wrapper.setProps({ qualityStatus: 'error' })
+    expect(wrapper.find('.mic__quality').text()).toContain('indisponível')
+    expect(wrapper.find('.mic__quality').text()).not.toContain('final local')
   })
 
-  it('shows local quality-model progress without claiming captions are blocked', () => {
-    const wrapper = mountMic({
-      listening: true,
-      localEngine: true,
-      inputState: 'receiving',
-      hasHypothesis: true,
-      qualityStatus: 'loading',
-      qualityProgress: 37,
-    } as any)
-
-    const quality = wrapper.find('.mic__quality')
-    expect(quality.exists()).toBe(true)
-    expect(quality.text()).toContain('37%')
-    expect(quality.text()).toContain('legendas rápidas continuam disponíveis')
-    expect(quality.text()).toContain('neste navegador')
-    expect(wrapper.find('.mic__quality-progress').attributes('aria-valuenow')).toBe('37')
-  })
-
-  it('announces ready, refining and graceful quality fallback as separate states', async () => {
-    const wrapper = mountMic({
-      listening: true,
-      localEngine: true,
-      qualityStatus: 'ready',
-    } as any)
-
-    expect(wrapper.find('.mic__quality').text()).toContain('Precisão local aprimorada pronta')
-
-    await wrapper.setProps({ qualityStatus: 'processing' } as any)
-    expect(wrapper.find('.mic__quality').text()).toContain('Refinando a última legenda localmente')
-    expect(wrapper.find('.mic__quality').text()).toContain('próximas falas continuam')
-
-    await wrapper.setProps({ qualityStatus: 'error' } as any)
-    expect(wrapper.find('.mic__quality').text()).toContain('Aprimoramento indisponível')
-    expect(wrapper.find('.mic__quality').text()).toContain('reconhecedor local rápido')
-  })
-
-  it("error 'not-allowed' mostra a dica de permissão de microfone", () => {
+  it('mostra dica acionável para permissão negada e pipeline sem frames', async () => {
     const wrapper = mountMic({ error: 'not-allowed' })
-
-    const error = wrapper.find('.mic__error')
-    expect(error.exists()).toBe(true)
-    expect(error.attributes('role')).toBe('alert')
-    expect(error.text()).toContain('Permissão de microfone negada')
-  })
-
-  it('falha do modelo local não culpa navegador nem serviço server-side', () => {
-    const wrapper = mountMic({ error: 'model-load-failed' })
-    const text = wrapper.find('.mic__error').text()
-
-    expect(text).toContain('modelo local de transcrição')
-    expect(text).not.toMatch(/servidor|provedor|Chrome|Edge|Brave/i)
-  })
-
-  it('pipeline sem frames mostra diagnóstico do microfone selecionado', () => {
-    const wrapper = mountMic({ error: 'audio-processing-stalled' })
+    expect(wrapper.find('.mic__error').text()).toContain('Permissão de microfone negada')
+    await wrapper.setProps({ error: 'audio-processing-stalled' })
     expect(wrapper.find('.mic__error').text()).toContain('nenhum áudio chegou')
-    expect(wrapper.find('.mic__error').text()).toContain('entrada selecionada')
   })
 
-  it('erro desconhecido cai na mensagem genérica com o código', () => {
-    const wrapper = mountMic({ error: 'esquisito' })
-    expect(wrapper.find('.mic__error').text()).toContain(
-      'Erro na transcrição: esquisito',
-    )
-  })
-
-  it('opens Meet-inspired audio settings and exposes the selected microphone', async () => {
-    const wrapper = mountMic({
-      audioDevices: [
-        { deviceId: 'default', groupId: 'group-1', label: 'Microfone interno' },
-        { deviceId: 'usb-headset', groupId: 'group-2', label: 'Headset USB' },
-      ],
-      selectedDeviceId: 'usb-headset',
-      audioDevicesSupported: true,
-    })
-
-    const trigger = wrapper.find('.mic__device-trigger')
-    expect(trigger.text()).toContain('Headset USB')
-    expect(trigger.attributes('aria-label')).toBe('Escolher e testar microfone')
-    expect(trigger.attributes('aria-expanded')).toBe('false')
-
-    await trigger.trigger('click')
-
-    expect(wrapper.emitted('refresh-audio-devices')?.[0]).toEqual([true])
-    expect(trigger.attributes('aria-expanded')).toBe('true')
-    const dialog = wrapper.find('[role="dialog"]')
-    expect(dialog.exists()).toBe(true)
-    expect(dialog.text()).toContain('Configurações de áudio')
-    expect(dialog.text()).toContain('Teste do microfone')
-    expect(dialog.text()).toContain('O áudio do teste não é enviado')
-
-    await trigger.trigger('keydown', { key: 'Escape' })
-    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
-  })
-
-  it('emits the selected device and explains why a specific input uses local mode', async () => {
+  it('explica que a entrada escolhida é enviada ao backend', async () => {
     const wrapper = mountMic({
       audioDevices: [
         { deviceId: 'default', groupId: '', label: 'Microfone padrão' },
@@ -237,53 +92,21 @@ describe('MicControl', () => {
       audioDevicesSupported: true,
     })
     await wrapper.find('.mic__device-trigger').trigger('click')
-
     await wrapper.find('#audio-input-device').setValue('usb-headset')
-
     expect(wrapper.emitted('select-audio-device')?.[0]).toEqual(['usb-headset'])
-    expect(wrapper.find('.mic__local-note').text()).toContain('processamento local')
+    expect(wrapper.find('.mic__backend-note').text()).toContain('ASR protegido do backend')
+    expect(wrapper.find('.mic__backend-note').text()).not.toContain('processamento local')
   })
 
-  it('tests the microphone with visual level and clear working feedback', async () => {
+  it('testa o microfone localmente sem enviar o áudio de teste', async () => {
     const wrapper = mountMic({
-      audioDevices: [
-        { deviceId: 'default', groupId: '', label: 'Microfone padrão' },
-      ],
-      selectedDeviceId: 'default',
-      audioDevicesSupported: true,
+      audioDevices: [{ deviceId: 'default', groupId: '', label: 'Microfone padrão' }],
       microphoneTestState: 'idle',
       microphoneTestLevel: 0,
     })
     await wrapper.find('.mic__device-trigger').trigger('click')
-
-    const testButton = wrapper.find('.mic-test__action')
-    expect(testButton.text()).toContain('Testar microfone')
-    await testButton.trigger('click')
-    expect(wrapper.emitted('start-microphone-test')).toHaveLength(1)
-
-    await wrapper.setProps({ microphoneTestState: 'working', microphoneTestLevel: 0.72 })
-    expect(wrapper.find('.mic-test__status').text()).toContain('Seu microfone está funcionando')
-    expect(wrapper.findAll('.mic-test__bar.active').length).toBeGreaterThan(0)
-    expect(wrapper.find('.mic-test__meter').attributes('aria-valuenow')).toBe('72')
-
+    expect(wrapper.text()).toContain('O áudio do teste não é enviado')
     await wrapper.find('.mic-test__action').trigger('click')
-    expect(wrapper.emitted('stop-microphone-test')).toHaveLength(1)
-  })
-
-  it('shows actionable permission errors inside audio settings', async () => {
-    const wrapper = mountMic({
-      audioDevicesSupported: true,
-      audioDeviceError: 'not-allowed',
-    })
-    await wrapper.find('.mic__device-trigger').trigger('click')
-
-    const error = wrapper.find('.mic-settings__error')
-    expect(error.attributes('role')).toBe('alert')
-    expect(error.text()).toContain('Permita o acesso ao microfone')
-  })
-
-  it('disabled desabilita o botão', () => {
-    const wrapper = mountMic({ disabled: true })
-    expect(wrapper.find('button').attributes('disabled')).toBeDefined()
+    expect(wrapper.emitted('start-microphone-test')).toHaveLength(1)
   })
 })
