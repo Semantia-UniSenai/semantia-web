@@ -4,7 +4,7 @@ import type { ChatMessage } from '../../live/types'
 
 const props = defineProps<{
   messages: ChatMessage[]
-  myUserId?: string
+  myParticipantId?: string
   disabled?: boolean
 }>()
 
@@ -48,12 +48,14 @@ function hour(at: string): string {
         v-for="m in messages"
         :key="m.id"
         class="chat__msg"
-        :class="{ mine: m.userId === myUserId }"
+        :class="{ mine: m.participantId === myParticipantId }"
       >
         <div class="chat__meta">
-          <strong>{{ m.userId === myUserId ? 'Você' : m.name }}</strong>
-          <span v-if="m.role === 'PROFESSOR'" class="chat__badge">Professor</span>
-          <time>{{ hour(m.at) }}</time>
+          <strong>{{ m.participantId === myParticipantId ? 'Você' : m.participantName }}</strong>
+          <span v-if="m.participantRole === 'HOST' || m.participantRole === 'MODERATOR'" class="chat__badge">
+            {{ m.participantRole === 'HOST' ? 'Anfitrião' : 'Moderador' }}
+          </span>
+          <time>{{ hour(m.createdAt) }}</time>
         </div>
         <p class="chat__text">{{ m.text }}</p>
       </div>
@@ -68,9 +70,9 @@ function hour(at: string): string {
         maxlength="1000"
         autocomplete="off"
         :disabled="disabled"
-        :placeholder="disabled ? 'A aula foi encerrada' : 'Escreva sua dúvida…'"
+        :placeholder="disabled ? 'A reunião foi encerrada' : 'Escreva uma mensagem…'"
       />
-      <button type="submit" :disabled="disabled || !draft.trim()" aria-label="Enviar">
+      <button type="submit" :disabled="disabled || !draft.trim()" aria-label="Enviar mensagem">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path
             d="M3.4 20.4 20.8 12 3.4 3.6l2.8 6.9L14 12l-7.8 1.5-2.8 6.9Z"

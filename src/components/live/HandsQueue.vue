@@ -18,7 +18,7 @@ function hour(at: string): string {
   <div class="hands" aria-live="polite" aria-label="Fila de mãos levantadas">
     <p v-if="hands.length === 0" class="hands__empty">Nenhuma mão levantada.</p>
     <TransitionGroup v-else name="hand" tag="ol" class="hands__list">
-      <li v-for="(hand, i) in hands" :key="hand.userId" class="hands__item">
+      <li v-for="(hand, i) in hands" :key="hand.participantId" class="hands__item">
         <span class="hands__pos">{{ i + 1 }}º</span>
         <LiveIcon class="hands__icon" name="hand" :size="17" />
         <span class="hands__name">{{ hand.name }}</span>

@@ -1,81 +1,41 @@
-import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { createRouter, createWebHistory } from 'vue-router'
+import { readGuestAccess } from '../live/guestAccess'
 import { useAuth } from '../stores/auth'
+import LandingView from '../views/LandingView.vue'
+import LoginView from '../views/LoginView.vue'
+import SignupView from '../views/SignupView.vue'
+import AppHomeView from '../views/AppHomeView.vue'
+import RoomsView from '../views/RoomsView.vue'
+import SessionInviteView from '../views/SessionInviteView.vue'
+import LiveRoomView from '../views/LiveRoomView.vue'
 
-const routes: RouteRecordRaw[] = [
-  {
-    path: '/',
-    name: 'landing',
-    component: () => import('../views/LandingView.vue'),
-  },
-  {
-    path: '/entrar',
-    name: 'login',
-    component: () => import('../views/LoginView.vue'),
-    meta: { guestOnly: true },
-  },
-  {
-    path: '/criar-conta',
-    name: 'signup',
-    component: () => import('../views/SignupView.vue'),
-    meta: { guestOnly: true },
-  },
-  {
-    path: '/app',
-    name: 'app-home',
-    component: () => import('../views/AppHomeView.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
-    path: '/app/turmas',
-    name: 'classes',
-    component: () => import('../views/ClassesView.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
-    path: '/app/turmas/:id',
-    name: 'class-detail',
-    component: () => import('../views/ClassDetailView.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
-    path: '/app/aula/:id',
-    name: 'live-room',
-    component: () => import('../views/LiveRoomView.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
-    // Link compartilhável de convite para uma aula (token no path).
-    path: '/aula/convite/:token',
-    name: 'session-invite',
-    component: () => import('../views/SessionInviteView.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
-    // Link compartilhável de convite para uma turma (código no path).
-    path: '/turma/convite/:code',
-    name: 'class-invite',
-    component: () => import('../views/ClassInviteView.vue'),
-    meta: { requiresAuth: true },
-  },
-  { path: '/:pathMatch(.*)*', redirect: '/' },
-]
 
 const router = createRouter({
-  history: createWebHistory(),
-  routes,
-  scrollBehavior(_to, _from, saved) {
-    return saved ?? { top: 0 }
-  },
+  history: createWebHistory(import.meta.env.BASE_URL),
+  routes: [
+    { path: '/', component: LandingView },
+    { path: '/entrar', component: LoginView, meta: { guestOnly: true } },
+    { path: '/criar-conta', component: SignupView, meta: { guestOnly: true } },
+    { path: '/convite/reuniao/:token', component: SessionInviteView },
+    { path: '/sala/:sessionId', component: LiveRoomView, meta: { liveAccess: true } },
+    { path: '/app', component: AppHomeView, meta: { requiresAuth: true } },
+    { path: '/app/salas', component: RoomsView, meta: { requiresAuth: true } },
+
+
+    { path: '/:pathMatch(.*)*', redirect: '/' },
+  ],
+  scrollBehavior: () => ({ top: 0 }),
 })
 
-// Guarda de navegação: trava rotas autenticadas e desvia quem já está logado das telas guest.
 router.beforeEach((to) => {
   const { isAuthenticated } = useAuth()
   if (to.meta.requiresAuth && !isAuthenticated.value) {
-    return { name: 'login', query: { redirect: to.fullPath } }
+    return { path: '/entrar', query: { redirect: to.fullPath } }
   }
-  if (to.meta.guestOnly && isAuthenticated.value) {
-    return { name: 'app-home' }
+  if (to.meta.guestOnly && isAuthenticated.value) return '/app'
+  if (to.meta.liveAccess && !isAuthenticated.value) {
+    const sessionId = String(to.params.sessionId ?? '')
+    if (!readGuestAccess(sessionId)) return '/'
   }
   return true
 })

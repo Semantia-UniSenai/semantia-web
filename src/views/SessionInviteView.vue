@@ -1,203 +1,77 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { resolveSessionToken } from '../api/generated/sessions/sessions'
+import { computed, onMounted, ref } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import {
+  createGuestAccess,
+  resolveSessionToken,
+} from '../api/generated/sessions/sessions'
 import type { ResolvedSessionDto } from '../api/generated/model'
+import { saveGuestAccess } from '../live/guestAccess'
 
 const route = useRoute()
 const router = useRouter()
-
-const token = route.params.token as string
-
-const loading = ref(true)
-const failed = ref(false)
+const token = computed(() => String(route.params.token))
 const session = ref<ResolvedSessionDto | null>(null)
+const displayName = ref('')
+const loading = ref(true)
+const entering = ref(false)
+const error = ref('')
 
 onMounted(async () => {
   try {
-    session.value = await resolveSessionToken({ token })
+    session.value = await resolveSessionToken({ token: token.value })
   } catch {
-    failed.value = true
+    error.value = 'Este convite não existe, expirou ou a reunião já foi encerrada.'
   } finally {
     loading.value = false
   }
 })
 
-function enter() {
-  if (!session.value) return
-  router.push({ path: `/app/aula/${session.value.sessionId}`, query: { token } })
+async function enter() {
+  if (!session.value || displayName.value.trim().length < 2) return
+  entering.value = true
+  error.value = ''
+  try {
+    const access = await createGuestAccess({
+      joinToken: token.value,
+      displayName: displayName.value.trim(),
+    })
+    saveGuestAccess(access)
+    await router.push(`/sala/${access.sessionId}`)
+  } catch {
+    error.value = 'Não foi possível validar sua entrada. Peça um novo convite.'
+  } finally {
+    entering.value = false
+  }
 }
 </script>
 
 <template>
   <main class="invite">
-    <RouterLink class="invite__brand" to="/app">
-      <img src="/brand/semantia-mark.png" alt="" width="34" height="36" />
-      <span>Semantia</span>
-    </RouterLink>
-
-    <div v-if="loading" class="card" aria-busy="true">
-      <span class="sk sk--badge"></span>
-      <span class="sk sk--title"></span>
-      <span class="sk sk--line"></span>
-      <p class="sr-only">Carregando convite…</p>
-    </div>
-
-    <div v-else-if="failed || !session" class="card" role="alert">
-      <h1>Convite inválido</h1>
-      <p class="sub">
-        Este link de aula não existe mais ou expirou. Peça um novo link para quem convidou você.
-      </p>
-      <RouterLink class="btn" to="/app">Ir para o início</RouterLink>
-    </div>
-
-    <div v-else class="card">
-      <p class="kicker">Você foi convidado para a aula</p>
-      <h1>{{ session.title }}</h1>
-      <span class="status" :class="session.status === 'LIVE' ? 'status--live' : 'status--ended'">
-        <span v-if="session.status === 'LIVE'" class="dot" aria-hidden="true"></span>
-        {{ session.status === 'LIVE' ? 'Ao vivo agora' : 'Aula encerrada' }}
-      </span>
-      <p class="sub">
-        {{ session.status === 'LIVE'
-          ? 'A transcrição em tempo real já está rolando. Entre para acompanhar.'
-          : 'A aula terminou, mas a transcrição completa continua disponível.' }}
-      </p>
-      <button class="btn" type="button" @click="enter">
-        {{ session.status === 'LIVE' ? 'Entrar na aula' : 'Ver transcrição' }}
-      </button>
-    </div>
+    <RouterLink class="brand" to="/">Semantia</RouterLink>
+    <section class="card" aria-live="polite">
+      <div v-if="loading" class="state">Validando convite…</div>
+      <template v-else-if="session">
+        <span class="live"><i aria-hidden="true"></i> Reunião ao vivo</span>
+        <p class="eyebrow">{{ session.roomName }}</p>
+        <h1>{{ session.title }}</h1>
+        <p>Entre como participante convidado. Você não precisa criar uma conta.</p>
+        <form @submit.prevent="enter">
+          <label>Como devemos chamar você?<input v-model="displayName" required minlength="2" maxlength="80" autocomplete="name" placeholder="Seu nome" /></label>
+          <button type="submit" :disabled="entering">{{ entering ? 'Validando…' : 'Entrar na reunião' }}</button>
+        </form>
+      </template>
+      <template v-else>
+        <span class="expired" aria-hidden="true">×</span>
+        <h1>Convite indisponível</h1>
+        <p>{{ error }}</p>
+        <RouterLink class="button" to="/">Voltar ao início</RouterLink>
+      </template>
+      <p v-if="session && error" class="error" role="alert">{{ error }}</p>
+    </section>
   </main>
 </template>
 
 <style scoped>
-.invite {
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 22px;
-  padding: 32px 20px;
-  background: radial-gradient(60% 50% at 50% 0%, rgba(91, 134, 212, 0.1), transparent 70%), var(--bg);
-}
-.invite__brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  text-decoration: none;
-  font-family: var(--display);
-  font-weight: 800;
-  font-size: 20px;
-  color: var(--ink);
-}
-.card {
-  width: 100%;
-  max-width: 420px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: 14px;
-  padding: 36px 32px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  box-shadow: var(--shadow-md);
-}
-.kicker {
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-}
-.card h1 {
-  font-size: 25px;
-  font-weight: 800;
-}
-.sub {
-  color: var(--ink-soft);
-  font-size: 14.5px;
-}
-.status {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 700;
-}
-.status--live {
-  background: rgba(192, 54, 44, 0.1);
-  color: #b02c22;
-}
-.status--live .dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #d33a2f;
-  animation: pulse 1.6s ease-in-out infinite;
-}
-.status--ended {
-  background: var(--bg-2);
-  color: var(--ink-soft);
-}
-@keyframes pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  margin-top: 4px;
-  padding: 13px;
-  border: 0;
-  border-radius: 12px;
-  background: var(--brand);
-  color: #fff;
-  font-family: var(--display);
-  font-weight: 600;
-  font-size: 16px;
-  cursor: pointer;
-  box-shadow: var(--shadow-brand);
-  text-decoration: none;
-}
-.sk {
-  display: block;
-  width: 100%;
-  border-radius: 8px;
-  background: linear-gradient(90deg, var(--bg) 25%, var(--bg-2) 50%, var(--bg) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s infinite;
-}
-.sk--badge {
-  height: 26px;
-  width: 40%;
-  border-radius: 999px;
-}
-.sk--title {
-  height: 26px;
-  width: 75%;
-}
-.sk--line {
-  height: 15px;
-  width: 60%;
-}
-@keyframes shimmer {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
-}
+.invite{min-height:100svh;display:grid;place-items:center;padding:28px;background:linear-gradient(145deg,#12182a,#263354)}.brand{position:absolute;top:28px;left:32px;color:white;font:800 20px var(--display);text-decoration:none}.card{width:min(530px,100%);padding:42px;border:1px solid rgba(255,255,255,.1);border-radius:26px;background:var(--surface);box-shadow:0 32px 90px rgba(0,0,0,.36);text-align:center}.live{display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border-radius:999px;background:rgba(35,160,105,.12);color:#18774f;font-size:11px;font-weight:800;text-transform:uppercase}.live i{width:7px;height:7px;border-radius:50%;background:#23a069}.eyebrow{margin:24px 0 7px;color:var(--brand);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.12em}.card h1{margin:0;font:800 34px/1.1 var(--display)}.card>p{color:var(--ink-soft);line-height:1.6}.card form{display:grid;gap:14px;margin-top:25px;text-align:left}.card label{display:grid;gap:7px;color:var(--ink-soft);font-size:13px;font-weight:700}.card input{padding:13px 14px;border:1px solid var(--line);border-radius:11px;background:var(--bg);font:inherit}.card button,.button{padding:13px;border:0;border-radius:12px;background:var(--brand);color:white;font:700 15px var(--display);text-decoration:none;text-align:center;cursor:pointer}.expired{display:grid;place-items:center;width:58px;height:58px;margin:0 auto 18px;border-radius:18px;background:rgba(192,54,44,.1);color:#aa352d;font-size:34px}.error{color:#aa352d!important}.state{color:var(--muted)}@media(max-width:520px){.card{padding:32px 22px}.brand{top:18px;left:20px}}
 </style>
