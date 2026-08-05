@@ -25,13 +25,19 @@ const participantsTrigger = ref<HTMLButtonElement | null>(null)
 const isCompactPanel = ref(false)
 let lastPanelTrigger: MeetingPanel = 'chat'
 let panelMediaQuery: MediaQueryList | null = null
-const startedAt = Date.now()
 
 const audioInput = useAudioInputDevices()
 const transcription = useMeetingTranscription({
   deviceId: audioInput.selectedDeviceId,
-  onPartial: (text) => void live.publishPartial(text),
-  onFinal: (text) => void live.publishFinal(text, Date.now() - startedAt),
+  onAudioSegment: (segment) => live.publishAudioSegment(segment),
+})
+
+const asrQualityStatus = computed<'idle' | 'ready' | 'processing' | 'error'>(() => {
+  const backendState = live.transcriptionStatus.value?.state
+  if (live.pendingAudioCount.value > 0 || backendState === 'processing') return 'processing'
+  if (backendState === 'failed') return 'error'
+  if (transcription.listening.value) return 'ready'
+  return transcription.qualityStatus.value
 })
 
 const backTo = computed(() => '/app/salas')
@@ -41,7 +47,7 @@ const captionState = computed<'available' | 'paused' | 'preparing' | 'listening'
   if (live.status.value !== 'connected') return 'reconnecting'
   if (transcription.loading.value) return 'preparing'
   if (transcription.listening.value) return 'listening'
-  return live.canManage.value ? 'paused' : 'available'
+  return live.canPublishTranscript.value ? 'paused' : 'available'
 })
 const meetingStatusLabel = computed(() => {
   if (live.ended.value) return 'Encerrada'
@@ -59,7 +65,7 @@ onMounted(() => {
 onBeforeUnmount(() => panelMediaQuery?.removeEventListener('change', syncPanelMode))
 watch(() => live.ended.value, (ended) => {
   if (ended) {
-    transcription.stop()
+    void transcription.stop({ flush: false })
     void audioInput.stopTest()
   }
 })
@@ -87,15 +93,17 @@ async function end() {
     window.setTimeout(() => (confirmingEnd.value = false), 3000)
     return
   }
-  transcription.stop()
+  await transcription.stop({ flush: true })
+  if (live.status.value === 'connected') await live.waitForAudioDrain()
   await audioInput.stopTest()
   await live.endSession()
   confirmingEnd.value = false
 }
 
-function leave() {
-  transcription.stop()
-  void audioInput.stopTest()
+async function leave() {
+  await transcription.stop({ flush: true })
+  if (live.status.value === 'connected') await live.waitForAudioDrain()
+  await audioInput.stopTest()
   live.disconnect()
   if (live.role.value === 'GUEST') router.push('/')
   else router.push(backTo.value)
@@ -200,7 +208,6 @@ function trapPanelFocus(event: KeyboardEvent) {
         >
           <CaptionStage
             :transcript="live.transcript.value"
-            :partial-text="live.partialText.value"
             :caption-state="captionState"
           />
         </section>
@@ -252,17 +259,19 @@ function trapPanelFocus(event: KeyboardEvent) {
         :inert="isCompactPanel && !!panel"
       >
         <MicControl
-          v-if="live.canManage.value && !live.ended.value"
+          v-if="live.canPublishTranscript.value"
           class="mic"
           :supported="transcription.supported"
           :listening="transcription.listening.value"
           :loading="transcription.loading.value"
           :error="transcription.error.value"
-          :local-engine="transcription.engine.value === 'local'"
           :input-state="transcription.inputState.value"
           :audio-level="transcription.audioLevel.value"
-          :transport="transcription.transport.value ?? undefined"
-          :has-hypothesis="transcription.hasHypothesis.value"
+          :quality-status="asrQualityStatus"
+          :pending-audio-count="live.pendingAudioCount.value"
+          :backend-engine="live.transcriptionStatus.value?.engine ?? undefined"
+          :backend-model="live.transcriptionStatus.value?.model ?? undefined"
+          :backend-inference-ms="live.transcriptionStatus.value?.inferenceMs ?? undefined"
           :audio-devices-supported="audioInput.supported"
           :audio-devices="audioInput.devices.value"
           :selected-device-id="audioInput.selectedDeviceId.value"

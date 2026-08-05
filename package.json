@@ -5,14 +5,12 @@
   "type": "module",
   "packageManager": "pnpm@10.22.0",
   "scripts": {
-    "model:prepare": "node scripts/ensure-vosk-model.mjs",
-    "predev": "pnpm model:prepare",
     "dev": "vite",
-    "prebuild": "pnpm model:prepare",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "vue-tsc -b",
     "api:spec": "curl -sf ${API_DOCS_URL:-http://localhost:3000/docs-json} -o openapi.json && echo spec\\ salvo",
     "api:gen": "orval --config orval.config.ts",
     "api:sync": "pnpm api:spec && pnpm api:gen"
@@ -23,7 +21,6 @@
     "@vue-a11y/vlibras": "^1.0.6",
     "axios": "^1.18.1",
     "socket.io-client": "^4.8.3",
-    "vosk-browser": "0.0.8",
     "vue": "^3.5.34",
     "vue-router": "^5.1.0"
   },

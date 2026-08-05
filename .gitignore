@@ -9,9 +9,6 @@ lerna-debug.log*
 
 node_modules
 dist
-# Modelo Vosk validado e gerado por `pnpm model:prepare`.
-public/models/*.tar.gz
-public/models/*.model
 dist-ssr
 *.local
 

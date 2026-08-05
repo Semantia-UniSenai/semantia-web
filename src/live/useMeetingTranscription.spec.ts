@@ -6,158 +6,150 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-function mockEngines(browserSupported: boolean) {
-  const speechError = ref<string | null>(null)
-  const speechListening = ref(false)
-  const localError = ref<string | null>(null)
-  const localListening = ref(false)
-  const localLoading = ref(false)
-  const localInputState = ref<'idle' | 'waiting' | 'silent' | 'receiving'>('idle')
-  const localAudioLevel = ref(0)
-  const localTransport = ref<'direct' | 'switching' | 'compatible'>('direct')
-  const localHasHypothesis = ref(false)
-  const speechStart = vi.fn()
-  const speechStop = vi.fn()
-  const localStart = vi.fn()
-  const localStop = vi.fn()
+function mockPipeline() {
+  const captureListening = ref(false)
+  const captureLoading = ref(false)
+  const captureError = ref<string | null>(null)
+  const inputState = ref<'idle' | 'waiting' | 'receiving'>('idle')
+  const audioLevel = ref(0)
+  const backendStatus = ref<'idle' | 'ready' | 'processing' | 'error'>('idle')
+  const backendError = ref<string | null>(null)
+  const captureStart = vi.fn(async () => {
+    captureListening.value = true
+    return true
+  })
+  const captureStop = vi.fn(() => {
+    captureListening.value = false
+  })
+  const backendStart = vi.fn(() => {
+    backendStatus.value = 'ready'
+  })
+  const backendStop = vi.fn(async () => {
+    backendStatus.value = 'idle'
+  })
+  const backendAddAudio = vi.fn()
+  let captureAudio: ((samples: Float32Array, sampleRate: number) => void) | undefined
+  let backendPublish: ((segment: unknown) => Promise<{ ok: boolean }>) | undefined
 
-  vi.doMock('./useSpeechRecognition', () => ({
-    useSpeechRecognition: vi.fn(() => ({
-      supported: browserSupported,
-      listening: speechListening,
-      error: speechError,
-      start: speechStart,
-      stop: speechStop,
-    })),
+  vi.doMock('./usePcmAudioCapture', () => ({
+    usePcmAudioCapture: vi.fn(
+      (options: { onAudioChunk: (samples: Float32Array, sampleRate: number) => void }) => {
+        captureAudio = options.onAudioChunk
+        return {
+          supported: true,
+          listening: captureListening,
+          loading: captureLoading,
+          error: captureError,
+          inputState,
+          audioLevel,
+          start: captureStart,
+          stop: captureStop,
+        }
+      },
+    ),
   }))
-  vi.doMock('./useVoskTranscription', () => ({
-    useVoskTranscription: vi.fn(() => ({
-      supported: true,
-      listening: localListening,
-      loading: localLoading,
-      error: localError,
-      inputState: localInputState,
-      audioLevel: localAudioLevel,
-      transport: localTransport,
-      hasHypothesis: localHasHypothesis,
-      start: localStart,
-      stop: localStop,
-    })),
+  vi.doMock('./useBackendAudioFinalizer', () => ({
+    useBackendAudioFinalizer: vi.fn(
+      (options: { publish: (segment: unknown) => Promise<{ ok: boolean }> }) => {
+        backendPublish = options.publish
+        return {
+          status: backendStatus,
+          error: backendError,
+          bufferedSeconds: ref(0),
+          start: backendStart,
+          stop: backendStop,
+          addAudioChunk: backendAddAudio,
+        }
+      },
+    ),
   }))
 
   return {
-    speechError,
-    speechListening,
-    localListening,
-    localLoading,
-    localInputState,
-    localAudioLevel,
-    localTransport,
-    localHasHypothesis,
-    speechStart,
-    speechStop,
-    localStart,
-    localStop,
+    captureListening,
+    captureStart,
+    captureStop,
+    backendStart,
+    backendStop,
+    backendAddAudio,
+    emitAudio: (samples: Float32Array, sampleRate: number) =>
+      captureAudio?.(samples, sampleRate),
+    publishBackendAudio: (segment: unknown) => backendPublish?.(segment),
   }
 }
 
 describe('useMeetingTranscription', () => {
-  it('uses local recognition for a specifically selected microphone', async () => {
-    const engines = mockEngines(true)
+  it('captures only PCM and delegates all text recognition to backend ASR', async () => {
+    const pipeline = mockPipeline()
+    const onAudioSegment = vi.fn().mockResolvedValue({ ok: true })
     const { useMeetingTranscription } = await import('./useMeetingTranscription')
-    const transcription = useMeetingTranscription({
-      onPartial: vi.fn(),
-      onFinal: vi.fn(),
-    })
+    const transcription = useMeetingTranscription({ onAudioSegment })
 
     await transcription.start('usb-headset')
+    const pcm = new Float32Array([0.1, -0.2])
+    pipeline.emitAudio(pcm, 48_000)
+    const segment = {
+      pcm16: new ArrayBuffer(32_000),
+      sampleRate: 16_000 as const,
+      durationMs: 1_000,
+    }
+    await pipeline.publishBackendAudio(segment)
 
-    expect(engines.speechStart).not.toHaveBeenCalled()
-    expect(engines.localStart).toHaveBeenCalledWith('usb-headset')
-    expect(transcription.engine.value).toBe('local')
+    expect(pipeline.captureStart).toHaveBeenCalledWith('usb-headset')
+    expect(pipeline.backendStart).toHaveBeenCalledTimes(1)
+    expect(pipeline.backendAddAudio).toHaveBeenCalledWith(pcm, 48_000)
+    expect(onAudioSegment).toHaveBeenCalledWith(segment)
   })
 
-  it('restarts only transcription on the newly selected microphone', async () => {
-    const engines = mockEngines(true)
+  it('stops capture before flushing the residual backend window', async () => {
+    const pipeline = mockPipeline()
+    const callOrder: string[] = []
+    pipeline.captureStop.mockImplementation(() => {
+      callOrder.push('capture-stop')
+      pipeline.captureListening.value = false
+    })
+    pipeline.backendStop.mockImplementation(async (options?: { flush?: boolean }) => {
+      callOrder.push(`backend-stop:${String(options?.flush)}`)
+    })
     const { useMeetingTranscription } = await import('./useMeetingTranscription')
     const transcription = useMeetingTranscription({
-      onPartial: vi.fn(),
-      onFinal: vi.fn(),
+      onAudioSegment: vi.fn().mockResolvedValue({ ok: true }),
     })
-    await transcription.start('default')
-    engines.speechListening.value = true
+    await transcription.start()
 
-    await transcription.changeDevice('usb-headset')
+    await transcription.stop()
 
-    expect(engines.speechStop).toHaveBeenCalledTimes(1)
-    expect(engines.localStop).toHaveBeenCalledTimes(1)
-    expect(engines.localStart).toHaveBeenCalledWith('usb-headset')
-    expect(transcription.engine.value).toBe('local')
+    expect(callOrder).toEqual(['capture-stop', 'backend-stop:true'])
   })
 
-  it('reacts when the selected device is replaced by devicechange fallback', async () => {
-    const engines = mockEngines(true)
+  it('restarts PCM capture on the newly selected microphone', async () => {
+    const pipeline = mockPipeline()
+    const { useMeetingTranscription } = await import('./useMeetingTranscription')
+    const transcription = useMeetingTranscription({
+      onAudioSegment: vi.fn().mockResolvedValue({ ok: true }),
+    })
+    await transcription.start('default')
+
+    await transcription.changeDevice('classroom-mic')
+
+    expect(pipeline.captureStart).toHaveBeenNthCalledWith(1, 'default')
+    expect(pipeline.captureStart).toHaveBeenNthCalledWith(2, 'classroom-mic')
+    expect(pipeline.backendStop).toHaveBeenCalledWith({ flush: true })
+  })
+
+  it('reacts when devicechange replaces the selected input', async () => {
+    const pipeline = mockPipeline()
     const selectedDeviceId = ref('default')
     const { useMeetingTranscription } = await import('./useMeetingTranscription')
     const transcription = useMeetingTranscription({
       deviceId: selectedDeviceId,
-      onPartial: vi.fn(),
-      onFinal: vi.fn(),
+      onAudioSegment: vi.fn().mockResolvedValue({ ok: true }),
     })
     await transcription.start()
-    engines.speechListening.value = true
 
-    selectedDeviceId.value = 'usb-headset'
+    selectedDeviceId.value = 'teacher-lapel'
     await nextTick()
-
-    expect(engines.speechStop).toHaveBeenCalledTimes(1)
-    expect(engines.localStart).toHaveBeenCalledWith('usb-headset')
-    expect(transcription.engine.value).toBe('local')
-  })
-
-  it('uses local offline recognition when native browser speech is absent', async () => {
-    const engines = mockEngines(false)
-    const { useMeetingTranscription } = await import('./useMeetingTranscription')
-    const transcription = useMeetingTranscription({
-      onPartial: vi.fn(),
-      onFinal: vi.fn(),
+    await vi.waitFor(() => {
+      expect(pipeline.captureStart).toHaveBeenLastCalledWith('teacher-lapel')
     })
-
-    await transcription.start()
-
-    expect(engines.speechStart).not.toHaveBeenCalled()
-    expect(engines.localStart).toHaveBeenCalledTimes(1)
-    expect(transcription.engine.value).toBe('local')
-    engines.localLoading.value = true
-    engines.localInputState.value = 'receiving'
-    engines.localAudioLevel.value = 0.4
-    engines.localTransport.value = 'compatible'
-    engines.localHasHypothesis.value = true
-    expect(transcription.loading.value).toBe(true)
-    expect(transcription.inputState.value).toBe('receiving')
-    expect(transcription.audioLevel.value).toBe(0.4)
-    expect(transcription.transport.value).toBe('compatible')
-    expect(transcription.hasHypothesis.value).toBe(true)
-  })
-
-  it('falls back to local offline recognition when native speech fails by network', async () => {
-    const engines = mockEngines(true)
-    const { useMeetingTranscription } = await import('./useMeetingTranscription')
-    const transcription = useMeetingTranscription({
-      onPartial: vi.fn(),
-      onFinal: vi.fn(),
-    })
-
-    await transcription.start()
-    expect(engines.speechStart).toHaveBeenCalledTimes(1)
-    expect(engines.localStart).not.toHaveBeenCalled()
-
-    engines.speechError.value = 'network'
-    await nextTick()
-
-    expect(engines.speechStop).toHaveBeenCalledTimes(1)
-    expect(engines.localStart).toHaveBeenCalledTimes(1)
-    expect(transcription.engine.value).toBe('local')
-    expect(transcription.error.value).toBeNull()
   })
 })

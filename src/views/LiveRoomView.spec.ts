@@ -15,6 +15,11 @@ import type {
 let liveMock: ReturnType<typeof createLiveMock>
 let audioMock: ReturnType<typeof createAudioMock>
 let transcriptionMock: ReturnType<typeof createTranscriptionMock>
+let transcriptionOptions: {
+  onAudioSegment?: (segment: unknown) => Promise<unknown>
+  onPartial?: unknown
+  onFinal?: unknown
+} | null
 let compactViewport = false
 
 const routerMocks = vi.hoisted(() => ({
@@ -43,7 +48,10 @@ vi.mock('../live/useAudioInputDevices', () => ({
 }))
 
 vi.mock('../live/useMeetingTranscription', () => ({
-  useMeetingTranscription: () => transcriptionMock,
+  useMeetingTranscription: (options: typeof transcriptionOptions) => {
+    transcriptionOptions = options
+    return transcriptionMock
+  },
 }))
 
 import LiveRoomView from './LiveRoomView.vue'
@@ -62,13 +70,15 @@ function createLiveMock() {
     hostId: 'host-1',
     hostName: 'Cauê',
   })
+  const role = ref<ParticipantRole | null>('HOST')
+  const ended = computed(() => session.value?.status === 'ENDED')
 
   return {
     status: ref<'offline' | 'connecting' | 'connected'>('connected'),
     joinError: ref<AckError | null>(null),
     actionError: ref<AckError | null>(null),
     session,
-    role: ref<ParticipantRole | null>('HOST'),
+    role,
     canManage: ref(true),
     participants: ref<Participant[]>([
       { participantId: 'host-1', name: 'Cauê', role: 'HOST' },
@@ -76,14 +86,16 @@ function createLiveMock() {
     raisedHands: ref<RaisedHand[]>([]),
     chat: ref<ChatMessage[]>([]),
     transcript: ref<TranscriptEntry[]>([]),
-    partialText: ref(''),
-    ended: computed(() => session.value?.status === 'ENDED'),
+    pendingAudioCount: ref(0),
+    transcriptionStatus: ref(null),
+    ended,
+    canPublishTranscript: computed(() => role.value === 'HOST' && !ended.value),
     joined: computed(() => true),
     currentParticipantId: ref<string | null>('host-1'),
     connect: vi.fn(),
     disconnect: vi.fn(),
-    publishPartial: vi.fn(),
-    publishFinal: vi.fn(),
+    publishAudioSegment: vi.fn().mockResolvedValue({ ok: true }),
+    waitForAudioDrain: vi.fn().mockResolvedValue(true),
     sendChat: vi.fn(),
     raiseHand: vi.fn(),
     lowerHand: vi.fn(),
@@ -114,11 +126,9 @@ function createTranscriptionMock() {
     listening: ref(false),
     loading: ref(false),
     error: ref<string | null>(null),
-    engine: ref<'browser' | 'local' | null>(null),
-    inputState: ref<'idle' | 'waiting' | 'silent' | 'receiving'>('idle'),
+    inputState: ref<'idle' | 'waiting' | 'receiving'>('idle'),
     audioLevel: ref(0),
-    transport: ref<'direct' | 'switching' | 'compatible' | null>(null),
-    hasHypothesis: ref(false),
+    qualityStatus: ref<'idle' | 'ready' | 'processing' | 'error'>('idle'),
     start: vi.fn(),
     stop: vi.fn(),
   }
@@ -150,6 +160,7 @@ beforeEach(() => {
   liveMock = createLiveMock()
   audioMock = createAudioMock()
   transcriptionMock = createTranscriptionMock()
+  transcriptionOptions = null
   compactViewport = false
   routerMocks.push.mockReset()
 
@@ -169,6 +180,21 @@ beforeEach(() => {
 })
 
 describe('LiveRoomView accessible stage layout', () => {
+  it('encaminha somente segmentos PCM ao backend, sem callbacks textuais no cliente', async () => {
+    mountRoom()
+    expect(transcriptionOptions).not.toHaveProperty('onPartial')
+    expect(transcriptionOptions).not.toHaveProperty('onFinal')
+    const segment = {
+      pcm16: new ArrayBuffer(32_000),
+      sampleRate: 16_000 as const,
+      durationMs: 1_000,
+    }
+
+    await transcriptionOptions?.onAudioSegment?.(segment)
+
+    expect(liveMock.publishAudioSegment).toHaveBeenCalledWith(segment)
+  })
+
   it('prioriza a legenda e mantém a superfície secundária fechada por padrão', () => {
     const wrapper = mountRoom()
 
