@@ -27,6 +27,7 @@ export interface TranscriptEntry {
   startMs: number
   endMs?: number | null
   text: string
+  cleaningStrategyVersion: string
   confidence?: number | null
   createdAt: string
 }

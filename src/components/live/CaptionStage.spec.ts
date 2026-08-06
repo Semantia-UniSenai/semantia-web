@@ -11,6 +11,7 @@ function entry(seq: number, text: string): TranscriptEntry {
     startMs: 0,
     endMs: null,
     text,
+    cleaningStrategyVersion: 'pt-br-conservative-v1',
     confidence: null,
     createdAt: '2026-07-02T10:00:00.000Z',
   }

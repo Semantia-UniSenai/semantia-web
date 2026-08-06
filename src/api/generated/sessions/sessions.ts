@@ -30,6 +30,7 @@ import type {
 } from 'vue';
 
 import type {
+  AudienceContextDto,
   CreateGuestAccessDto,
   GetSessionParams,
   GetSessionTranscriptParams,
@@ -181,6 +182,72 @@ export const useCreateGuestAccess = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getCreateGuestAccessMutationOptions(options), queryClient);
+    }
+    /**
+ * @summary Set the audience context before starting the session
+ */
+export const updateSessionContext = (
+    id: MaybeRef<string>,
+    audienceContextDto: MaybeRef<AudienceContextDto>,
+ signal?: AbortSignal
+) => {
+      id = unref(id);
+audienceContextDto = unref(audienceContextDto);
+
+      return customInstance<SessionDto>(
+      {url: `/api/sessions/${id}/context`, method: 'PATCH',
+      headers: {'Content-Type': 'application/json', },
+      data: audienceContextDto, signal
+    },
+      );
+    }
+
+
+
+
+export const getUpdateSessionContextMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSessionContext>>, TError,{id: string;data: BodyType<AudienceContextDto>}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof updateSessionContext>>, TError,{id: string;data: BodyType<AudienceContextDto>}, TContext> => {
+
+const mutationKey = ['updateSessionContext'];
+const {mutation: mutationOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSessionContext>>, {id: string;data: BodyType<AudienceContextDto>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateSessionContext(id,data,)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSessionContextMutationResult = NonNullable<Awaited<ReturnType<typeof updateSessionContext>>>
+    export type UpdateSessionContextMutationBody = BodyType<AudienceContextDto>
+    export type UpdateSessionContextMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Set the audience context before starting the session
+ */
+export const useUpdateSessionContext = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSessionContext>>, TError,{id: string;data: BodyType<AudienceContextDto>}, TContext>, }
+ , queryClient?: QueryClient): UseMutationReturnType<
+        Awaited<ReturnType<typeof updateSessionContext>>,
+        TError,
+        {id: string;data: BodyType<AudienceContextDto>},
+        TContext
+      > => {
+      return useMutation(getUpdateSessionContextMutationOptions(options), queryClient);
     }
     /**
  * @summary End a session idempotently

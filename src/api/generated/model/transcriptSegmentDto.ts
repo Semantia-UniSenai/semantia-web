@@ -11,5 +11,6 @@ export interface TranscriptSegmentDto {
   sessionId: string;
   seq: number;
   text: string;
+  cleaningStrategyVersion: string;
   createdAt: string;
 }

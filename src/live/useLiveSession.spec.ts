@@ -66,6 +66,7 @@ const session = {
   roomId: 'room-1',
   joinToken: 'invite-1',
   status: 'LIVE' as const,
+  audienceContext: null,
   createdAt: '2026-07-30T10:00:00.000Z',
   startedAt: '2026-07-30T10:01:00.000Z',
   endedAt: null,
@@ -138,12 +139,23 @@ describe('useLiveSession generic room contract', () => {
       participants: [{ participantId: 'account-1', name: 'Ana', role: 'HOST' }],
       raisedHands: [],
       chat: [{ id: 'message-0', participantId: 'account-1', name: 'Ana', role: 'HOST', text: 'Abertura', at: '2026-07-30T10:01:00.000Z' }],
-      transcript: [{ seq: 1, text: 'Bem-vindos', at: '2026-07-30T10:01:05.000Z' }],
+      transcript: [
+        {
+          seq: 1,
+          text: 'Bem-vindos',
+          cleaningStrategyVersion: 'pt-br-conservative-v1',
+          at: '2026-07-30T10:01:05.000Z',
+        },
+      ],
     })
     expect(live.role.value).toBe('HOST')
     expect(live.canManage.value).toBe(true)
     expect(live.chat.value[0]).toMatchObject({ participantName: 'Ana', participantRole: 'HOST', createdAt: '2026-07-30T10:01:00.000Z' })
-    expect(live.transcript.value[0]).toMatchObject({ text: 'Bem-vindos', createdAt: '2026-07-30T10:01:05.000Z' })
+    expect(live.transcript.value[0]).toMatchObject({
+      text: 'Bem-vindos',
+      cleaningStrategyVersion: 'pt-br-conservative-v1',
+      createdAt: '2026-07-30T10:01:05.000Z',
+    })
 
     socket.fire('presence:joined', {
       participant: { participantId: 'guest-1', name: 'Bruno', role: 'GUEST' },
@@ -154,6 +166,22 @@ describe('useLiveSession generic room contract', () => {
       id: 'message-1', participantId: 'guest-1', name: 'Bruno', role: 'GUEST', text: 'Olá', at: '2026-07-30T10:02:00.000Z',
     })
     expect(live.chat.value.at(-1)).toMatchObject({ participantName: 'Bruno', participantRole: 'GUEST' })
+  })
+
+  it('labels pre-version socket transcript events as legacy-unversioned', () => {
+    const { socket, live } = setup()
+    live.connect('session-1')
+
+    socket.fire('transcript:final', {
+      seq: 1,
+      text: 'Texto legado',
+      at: '2026-07-30T10:02:00.000Z',
+    })
+
+    expect(live.transcript.value[0]).toMatchObject({
+      text: 'Texto legado',
+      cleaningStrategyVersion: 'legacy-unversioned',
+    })
   })
 
   it('hydrates host publication permission from the real gateway self envelope', () => {
@@ -183,7 +211,7 @@ describe('useLiveSession generic room contract', () => {
   it('keeps transcript and chat payloads generic', () => {
     const { socket, live } = setup()
     live.connect('session-1')
-    const transcript: TranscriptEntry = { seq: 1, startMs: 0, endMs: null, text: 'Texto acessível', confidence: null, createdAt: '2026-07-30T10:02:00.000Z' }
+    const transcript: TranscriptEntry = { seq: 1, startMs: 0, endMs: null, text: 'Texto acessível', cleaningStrategyVersion: 'pt-br-conservative-v1', confidence: null, createdAt: '2026-07-30T10:02:00.000Z' }
     const chat: ChatMessage = { id: 'message-1', participantId: 'guest-1', participantName: 'Bruno', participantRole: 'GUEST', text: 'Entendido', createdAt: '2026-07-30T10:02:05.000Z' }
     socket.fire('transcript:final', transcript)
     socket.fire('chat:message', chat)

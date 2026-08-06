@@ -6,6 +6,8 @@
  * OpenAPI spec version: 1.0.0
  */
 
+export * from './ageRange';
+export * from './audienceContextDto';
 export * from './authResponseDto';
 export * from './createGuestAccessDto';
 export * from './createRoomDto';
@@ -21,6 +23,8 @@ export * from './instantMeetingDto';
 export * from './instantMeetingDtoStatus';
 export * from './joinRoomDto';
 export * from './meetingStatus';
+export * from './meetingType';
+export * from './portugueseFamiliarity';
 export * from './rankingEntryDto';
 export * from './resolvedSessionDto';
 export * from './resolveSessionTokenParams';
@@ -43,6 +47,7 @@ export * from './sessionDtoStartedAt';
 export * from './sessionStatus';
 export * from './signInDto';
 export * from './signUpDto';
+export * from './simplificationLevel';
 export * from './transcriptSegmentDto';
 export * from './updateRoomDto';
 export * from './updateRoomMemberRoleDto';

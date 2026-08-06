@@ -35,6 +35,7 @@ interface SocketTranscriptEntry {
   startMs?: number
   endMs?: number | null
   text: string
+  cleaningStrategyVersion?: string
   confidence?: number | null
   createdAt?: string
   at?: string
@@ -68,6 +69,8 @@ function normalizeTranscriptEntry(entry: SocketTranscriptEntry): TranscriptEntry
     startMs: entry.startMs ?? 0,
     endMs: entry.endMs ?? null,
     text: entry.text,
+    cleaningStrategyVersion:
+      entry.cleaningStrategyVersion ?? 'legacy-unversioned',
     confidence: entry.confidence ?? null,
     createdAt: entry.createdAt ?? entry.at ?? '',
   }
