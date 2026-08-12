@@ -11,6 +11,7 @@ import type {
   Participant,
   ParticipantRole,
   RaisedHand,
+  TranscriptAdaptation,
   TranscriptEntry,
 } from './types'
 
@@ -31,6 +32,7 @@ interface SocketChatMessage {
 }
 
 interface SocketTranscriptEntry {
+  id?: string
   seq: number
   startMs?: number
   endMs?: number | null
@@ -39,6 +41,14 @@ interface SocketTranscriptEntry {
   confidence?: number | null
   createdAt?: string
   at?: string
+  adaptation?: TranscriptAdaptation | null
+}
+
+interface SocketTranscriptAdaptedEvent {
+  segmentId: string
+  sessionId: string
+  seq: number
+  adaptation: TranscriptAdaptation
 }
 
 interface SocketSessionState {
@@ -65,6 +75,7 @@ function normalizeChatMessage(message: SocketChatMessage): ChatMessage {
 
 function normalizeTranscriptEntry(entry: SocketTranscriptEntry): TranscriptEntry {
   return {
+    ...(entry.id ? { id: entry.id } : {}),
     seq: entry.seq,
     startMs: entry.startMs ?? 0,
     endMs: entry.endMs ?? null,
@@ -73,6 +84,9 @@ function normalizeTranscriptEntry(entry: SocketTranscriptEntry): TranscriptEntry
       entry.cleaningStrategyVersion ?? 'legacy-unversioned',
     confidence: entry.confidence ?? null,
     createdAt: entry.createdAt ?? entry.at ?? '',
+    ...(entry.adaptation !== undefined
+      ? { adaptation: entry.adaptation }
+      : {}),
   }
 }
 
@@ -128,6 +142,7 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
   let audioRetryTimer: ReturnType<typeof setTimeout> | null = null
   let audioExpiryTimer: ReturnType<typeof setTimeout> | null = null
   let audioDrainSucceeded = true
+  const pendingAdaptations = new Map<string, TranscriptAdaptation>()
   const audioDrainWaiters: Array<(drained: boolean) => void> = []
   const pendingAckCancels = new Set<(error: AckError) => void>()
 
@@ -211,8 +226,59 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
       chat.value = [...chat.value, normalizeChatMessage(message)]
     })
     next.on('transcript:final', (entry: SocketTranscriptEntry) => {
-      transcript.value = [...transcript.value, normalizeTranscriptEntry(entry)].sort(
-        (a, b) => a.seq - b.seq,
+      const normalized = normalizeTranscriptEntry(entry)
+      const pending = normalized.id ? pendingAdaptations.get(normalized.id) : undefined
+      const existing = transcript.value.find(
+        (item) =>
+          (normalized.id && item.id === normalized.id) || item.seq === normalized.seq,
+      )
+      const adaptation = pending ?? normalized.adaptation ?? existing?.adaptation
+      const nextEntry = {
+        ...existing,
+        ...normalized,
+        ...(adaptation !== undefined ? { adaptation } : {}),
+      }
+      if (normalized.id) pendingAdaptations.delete(normalized.id)
+      transcript.value = [
+        ...transcript.value.filter(
+          (item) =>
+            !(
+              (normalized.id && item.id === normalized.id) ||
+              item.seq === normalized.seq
+            ),
+        ),
+        nextEntry,
+      ].sort((a, b) => a.seq - b.seq)
+    })
+    next.on('transcript:adapted', (event: SocketTranscriptAdaptedEvent) => {
+      if (session.value?.id !== event.sessionId) return
+      const index = transcript.value.findIndex(
+        (item) => item.id === event.segmentId || item.seq === event.seq,
+      )
+      if (index < 0) {
+        const pending = pendingAdaptations.get(event.segmentId)
+        if (
+          pending &&
+          (pending.contextVersion > event.adaptation.contextVersion ||
+            (pending.contextVersion === event.adaptation.contextVersion &&
+              Date.parse(pending.at) > Date.parse(event.adaptation.at)))
+        ) {
+          return
+        }
+        pendingAdaptations.set(event.segmentId, event.adaptation)
+        return
+      }
+      const current = transcript.value[index]?.adaptation
+      if (
+        current &&
+        (current.contextVersion > event.adaptation.contextVersion ||
+          (current.contextVersion === event.adaptation.contextVersion &&
+            Date.parse(current.at) > Date.parse(event.adaptation.at)))
+      ) {
+        return
+      }
+      transcript.value = transcript.value.map((item, itemIndex) =>
+        itemIndex === index ? { ...item, adaptation: event.adaptation } : item,
       )
     })
     next.on('transcription:status', (event: BackendTranscriptionStatus) => {
@@ -491,6 +557,7 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
   function disconnect() {
     cancelPendingAcks({ code: 'OFFLINE', message: 'Socket desconectado' })
     clearPendingAudio()
+    pendingAdaptations.clear()
     joinedSocket = false
     socket.value?.removeAllListeners()
     socket.value?.disconnect()
