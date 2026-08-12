@@ -63,6 +63,7 @@ function createLiveMock() {
     roomId: 'room-1',
     joinToken: 'invite-token',
     status: 'LIVE',
+    audienceContext: null,
     createdAt: '2026-07-31T12:00:00.000Z',
     startedAt: '2026-07-31T12:00:00.000Z',
     endedAt: null,
