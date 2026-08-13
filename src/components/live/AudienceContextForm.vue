@@ -36,7 +36,7 @@ async function submit() {
 <template>
   <div class="context-form" role="region" aria-label="Configuração da plateia">
     <div class="context-form__inner">
-      <h2 class="context-form__title">Configure a plateia</h2>
+      <h2 class="context-form__title" style="color: #f4f7ff">Configure a plateia</h2>
       <p class="context-form__desc">
         Essas informações orientam o agente de IA ao adaptar a transcrição. Você pode pular e
         configurar depois, mas a adaptação ficará mais precisa com o contexto preenchido.

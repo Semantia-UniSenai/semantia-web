@@ -18,6 +18,8 @@ const live = useLiveSession()
 const copied = ref(false)
 const confirmingEnd = ref(false)
 const showContextForm = ref(false)
+const entryContextPromptShown = ref(false)
+const startTranscriptionAfterContext = ref(false)
 type MeetingPanel = 'chat' | 'participants'
 
 const panel = ref<MeetingPanel | null>(null)
@@ -72,9 +74,29 @@ watch(() => live.ended.value, (ended) => {
     void audioInput.stopTest()
   }
 })
+watch(
+  [live.status, live.canManage, live.session],
+  ([status, canManage, session]) => {
+    if (
+      entryContextPromptShown.value ||
+      status !== 'connected' ||
+      !canManage ||
+      !session ||
+      session.status === 'ENDED' ||
+      session.audienceContext
+    ) {
+      return
+    }
+    entryContextPromptShown.value = true
+    startTranscriptionAfterContext.value = false
+    showContextForm.value = true
+  },
+  { immediate: true },
+)
 
 async function startTranscription() {
   if (live.canManage.value && !live.session.value?.audienceContext) {
+    startTranscriptionAfterContext.value = true
     showContextForm.value = true
     return
   }
@@ -92,15 +114,23 @@ async function saveContext(context: AudienceContext) {
   } catch {
     // falha silenciosa — contexto é opcional; o host pode pular
   } finally {
+    const shouldStartTranscription = startTranscriptionAfterContext.value
+    startTranscriptionAfterContext.value = false
     showContextForm.value = false
-    await audioInput.stopTest()
-    await transcription.start(audioInput.selectedDeviceId.value)
+    if (shouldStartTranscription) {
+      await audioInput.stopTest()
+      await transcription.start(audioInput.selectedDeviceId.value)
+    }
   }
 }
 
 function skipContext() {
+  const shouldStartTranscription = startTranscriptionAfterContext.value
+  startTranscriptionAfterContext.value = false
   showContextForm.value = false
-  void audioInput.stopTest().then(() => transcription.start(audioInput.selectedDeviceId.value))
+  if (shouldStartTranscription) {
+    void audioInput.stopTest().then(() => transcription.start(audioInput.selectedDeviceId.value))
+  }
 }
 
 async function changeAudioInput(deviceId: string) {
