@@ -39,12 +39,20 @@ export interface AudienceContext {
   simplificationLevel: string
 }
 
+export interface AdmissionEntry {
+  admissionId: string
+  displayName: string
+  isGuest: boolean
+  requestedAt: string
+}
+
 export interface LiveSessionDetails {
   id: string
   title: string
   roomId: string
   joinToken: string
   status: SessionStatus
+  requiresApproval: boolean
   audienceContext: AudienceContext | null
   createdAt: string
   startedAt: string | null
@@ -67,6 +75,7 @@ export interface SessionState {
   raisedHands: RaisedHand[]
   chat: ChatMessage[]
   transcript: TranscriptEntry[]
+  admissionQueue?: AdmissionEntry[]
 }
 
 export interface AckError {

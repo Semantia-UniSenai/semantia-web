@@ -6,6 +6,7 @@ import type { BackendAudioSegment } from './useBackendAudioFinalizer'
 import type {
   Ack,
   AckError,
+  AdmissionEntry,
   ChatMessage,
   LiveSessionDetails,
   Participant,
@@ -49,6 +50,7 @@ interface SocketSessionState {
   raisedHands: RaisedHand[]
   chat: SocketChatMessage[]
   transcript: SocketTranscriptEntry[]
+  admissionQueue?: AdmissionEntry[]
 }
 
 function normalizeChatMessage(message: SocketChatMessage): ChatMessage {
@@ -115,6 +117,8 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
   const transcript = ref<TranscriptEntry[]>([])
   const pendingAudioCount = ref(0)
   const transcriptionStatus = ref<BackendTranscriptionStatus | null>(null)
+  const admissionQueue = ref<AdmissionEntry[]>([])
+  const admissionStatus = ref<'none' | 'waiting' | 'denied'>('none')
   const ended = computed(() => session.value?.status === 'ENDED')
   const canPublishTranscript = computed(() => role.value === 'HOST' && !ended.value)
   const joined = computed(() => !!session.value && status.value === 'connected')
@@ -167,6 +171,7 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
     })
     next.on('session:state', (state: SocketSessionState) => {
       joinedSocket = true
+      admissionStatus.value = 'none'
       session.value = state.session
       role.value = state.self?.role ?? state.role ?? null
       currentParticipantId.value =
@@ -174,9 +179,22 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
       canManage.value = state.canManage
       participants.value = state.participants
       raisedHands.value = state.raisedHands
+      admissionQueue.value = state.admissionQueue ?? []
       chat.value = state.chat.map(normalizeChatMessage)
       transcript.value = state.transcript.map(normalizeTranscriptEntry)
       void flushPendingAudio()
+    })
+    next.on('admission:waiting', () => {
+      admissionStatus.value = 'waiting'
+    })
+    next.on('admission:denied', () => {
+      admissionStatus.value = 'denied'
+    })
+    next.on('admission:request', (entry: AdmissionEntry) => {
+      admissionQueue.value = [
+        ...admissionQueue.value.filter((e) => e.admissionId !== entry.admissionId),
+        entry,
+      ]
     })
     next.on('presence:joined', (event: Participant | { participant: Participant }) => {
       const participant = 'participant' in event ? event.participant : event
@@ -485,10 +503,32 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
     emitAck('hand:lower-for', { participantId })
   const endSession = () => emitAck('session:end')
 
+  async function approveAdmission(admissionId: string) {
+    const result = await emitAck('admission:approve', { admissionId })
+    if (result.ok) {
+      admissionQueue.value = admissionQueue.value.filter(
+        (e) => e.admissionId !== admissionId,
+      )
+    }
+    return result
+  }
+
+  async function rejectAdmission(admissionId: string) {
+    const result = await emitAck('admission:reject', { admissionId })
+    if (result.ok) {
+      admissionQueue.value = admissionQueue.value.filter(
+        (e) => e.admissionId !== admissionId,
+      )
+    }
+    return result
+  }
+
   function disconnect() {
     cancelPendingAcks({ code: 'OFFLINE', message: 'Socket desconectado' })
     clearPendingAudio()
     joinedSocket = false
+    admissionQueue.value = []
+    admissionStatus.value = 'none'
     socket.value?.removeAllListeners()
     socket.value?.disconnect()
     socket.value = null
@@ -523,5 +563,9 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
     lowerHand,
     lowerParticipantHand,
     endSession,
+    admissionQueue,
+    admissionStatus,
+    approveAdmission,
+    rejectAdmission,
   }
 }

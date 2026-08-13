@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { updateSessionContext, type AudienceContext } from '../api/sessions-context'
+import { patchSessionSettings, updateSessionContext, type AudienceContext } from '../api/sessions-context'
+import AdmissionQueue from '../components/live/AdmissionQueue.vue'
 import AudienceContextForm from '../components/live/AudienceContextForm.vue'
 import CaptionStage from '../components/live/CaptionStage.vue'
 import ChatPanel from '../components/live/ChatPanel.vue'
@@ -82,12 +83,12 @@ async function startTranscription() {
   await transcription.start(audioInput.selectedDeviceId.value)
 }
 
-async function saveContext(context: AudienceContext) {
+async function saveContext({ context, requiresApproval }: { context: AudienceContext; requiresApproval: boolean }) {
   const id = sessionId.value
   try {
-    await updateSessionContext(id, context)
+    await updateSessionContext(id, { ...context, requiresApproval })
     if (live.session.value) {
-      live.session.value = { ...live.session.value, audienceContext: context }
+      live.session.value = { ...live.session.value, audienceContext: context, requiresApproval }
     }
   } catch {
     // falha silenciosa — contexto é opcional; o host pode pular
@@ -95,6 +96,24 @@ async function saveContext(context: AudienceContext) {
     showContextForm.value = false
     await audioInput.stopTest()
     await transcription.start(audioInput.selectedDeviceId.value)
+  }
+}
+
+async function toggleApproval() {
+  const current = live.session.value?.requiresApproval ?? false
+  const next = !current
+  try {
+    await patchSessionSettings(sessionId.value, { requiresApproval: next })
+    if (live.session.value) {
+      live.session.value = { ...live.session.value, requiresApproval: next }
+    }
+    if (!next) {
+      for (const entry of [...live.admissionQueue.value]) {
+        await live.approveAdmission(entry.admissionId)
+      }
+    }
+  } catch {
+    // silent
   }
 }
 
@@ -185,6 +204,23 @@ function trapPanelFocus(event: KeyboardEvent) {
     @submit="saveContext"
     @skip="skipContext"
   />
+
+  <div v-if="live.admissionStatus.value === 'waiting'" class="admission-overlay" role="status" aria-live="polite">
+    <div class="admission-overlay__card">
+      <svg aria-hidden="true" viewBox="0 0 24 24" class="admission-overlay__icon"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      <h2>Aguardando aprovação</h2>
+      <p>O anfitrião será notificado. Aguarde um momento.</p>
+    </div>
+  </div>
+
+  <div v-if="live.admissionStatus.value === 'denied'" class="admission-overlay admission-overlay--denied" role="alert">
+    <div class="admission-overlay__card">
+      <svg aria-hidden="true" viewBox="0 0 24 24" class="admission-overlay__icon"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+      <h2>Acesso não permitido</h2>
+      <p>Seu acesso à sala não foi aceito. Entre em contato com o anfitrião.</p>
+      <button type="button" class="ghost" @click="live.disconnect(); $router.push('/')">Fechar</button>
+    </div>
+  </div>
   <main class="room" :class="{ 'room--panel-open': panel }">
     <a class="skip-link" href="#captions-main">Ir para a legenda</a>
     <header class="topbar" :inert="isCompactPanel && !!panel">
@@ -205,6 +241,17 @@ function trapPanelFocus(event: KeyboardEvent) {
         <button v-if="live.canManage.value && !live.ended.value" class="ghost" type="button" @click="copyInvite">
           <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1.1l2-2A5 5 0 0 0 12 4l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>
           <span>{{ copied ? 'Link copiado' : 'Convidar' }}</span>
+        </button>
+        <button
+          v-if="live.canManage.value && !live.ended.value"
+          class="ghost"
+          type="button"
+          :aria-pressed="live.session.value?.requiresApproval"
+          :title="live.session.value?.requiresApproval ? 'Aprovação ativada — clique para abrir a sala' : 'Sala aberta — clique para exigir aprovação'"
+          @click="toggleApproval"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+          <span>{{ live.session.value?.requiresApproval ? 'Aprovação ativa' : 'Sala aberta' }}</span>
         </button>
         <button
           v-if="live.canManage.value && !live.ended.value"
@@ -275,7 +322,14 @@ function trapPanelFocus(event: KeyboardEvent) {
             </button>
           </header>
           <ChatPanel v-if="panel === 'chat'" :messages="live.chat.value" :my-participant-id="live.currentParticipantId.value ?? undefined" :disabled="live.ended.value" @send="live.sendChat" />
-          <div v-else class="people">
+          <template v-else>
+          <AdmissionQueue
+            v-if="live.canManage.value && live.admissionQueue.value.length > 0"
+            :queue="live.admissionQueue.value"
+            @approve="live.approveAdmission"
+            @reject="live.rejectAdmission"
+          />
+          <div class="people">
             <article v-for="participant in live.participants.value" :key="participant.participantId">
               <span class="avatar">{{ participant.name.charAt(0).toUpperCase() }}</span>
               <div><strong>{{ participant.participantId === live.currentParticipantId.value ? 'Você' : participant.name }}</strong><small>{{ participant.role === 'HOST' ? 'Anfitrião' : participant.role === 'MODERATOR' ? 'Moderador' : participant.role === 'GUEST' ? 'Convidado' : 'Participante' }}</small></div>
@@ -283,6 +337,7 @@ function trapPanelFocus(event: KeyboardEvent) {
               <span v-else-if="live.raisedHands.value.some((hand) => hand.participantId === participant.participantId)" class="raised">✋</span>
             </article>
           </div>
+          </template>
         </aside>
       </div>
 
@@ -351,7 +406,10 @@ function trapPanelFocus(event: KeyboardEvent) {
           @click="togglePanel('participants')"
         >
           <span class="control-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 20v-2a4 4 0 0 0-3-3.87M16 2.13a4 4 0 0 1 0 7.75"/></svg></span>
-          <span class="control-copy"><strong>Pessoas</strong><small>{{ live.participants.value.length }} na reunião</small></span>
+          <span class="control-copy">
+            <strong>Pessoas<span v-if="live.admissionQueue.value.length > 0" class="admission-badge">{{ live.admissionQueue.value.length }}</span></strong>
+            <small>{{ live.participants.value.length }} na reunião</small>
+          </span>
         </button>
       </nav>
     </template>
@@ -909,5 +967,71 @@ function trapPanelFocus(event: KeyboardEvent) {
   :global(body:has(.room) [vw].enabled) {
     transition: none;
   }
+}
+
+/* Admission queue overlay */
+.admission-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(8, 13, 25, 0.88);
+  backdrop-filter: blur(12px);
+}
+.admission-overlay__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: min(420px, 100%);
+  padding: 40px 32px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 22px;
+  background: #11192a;
+  color: #dce4fa;
+  text-align: center;
+}
+.admission-overlay__card h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+.admission-overlay__card p {
+  margin: 0;
+  color: #8895b3;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+.admission-overlay__icon {
+  width: 48px;
+  height: 48px;
+  color: #6b8af7;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.admission-overlay--denied .admission-overlay__icon {
+  color: #ff9aac;
+}
+
+/* Badge na fila */
+.admission-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 5px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #f0c060;
+  color: #3a2800;
+  font-size: 9px;
+  font-weight: 850;
+  vertical-align: middle;
 }
 </style>
