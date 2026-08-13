@@ -9,17 +9,31 @@ export interface AudienceContext {
   simplificationLevel: 'leve' | 'moderada' | 'alta'
 }
 
+export type SessionContextPatch = Partial<AudienceContext> & { requiresApproval?: boolean }
+
 export interface SessionWithContext extends SessionDto {
   audienceContext: AudienceContext | null
+  requiresApproval: boolean
 }
 
 export const updateSessionContext = (
   sessionId: string,
-  context: AudienceContext,
+  context: AudienceContext & { requiresApproval?: boolean },
 ): Promise<SessionWithContext> =>
   customInstance({
     url: `/api/sessions/${sessionId}/context`,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     data: context,
+  })
+
+export const patchSessionSettings = (
+  sessionId: string,
+  patch: SessionContextPatch,
+): Promise<SessionWithContext> =>
+  customInstance({
+    url: `/api/sessions/${sessionId}/context`,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    data: patch,
   })

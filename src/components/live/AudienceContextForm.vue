@@ -3,12 +3,13 @@ import { reactive, ref } from 'vue'
 import type { AudienceContext } from '../../api/sessions-context'
 
 const emit = defineEmits<{
-  submit: [context: AudienceContext]
+  submit: [payload: { context: AudienceContext; requiresApproval: boolean }]
   skip: []
 }>()
 
 const saving = ref(false)
 const error = ref<string | null>(null)
+const requiresApproval = ref(false)
 
 const form = reactive<AudienceContext>({
   meetingType: 'escola',
@@ -26,7 +27,10 @@ async function submit() {
   error.value = null
   saving.value = true
   try {
-    emit('submit', { ...form, domain: form.domain.trim() })
+    emit('submit', {
+      context: { ...form, domain: form.domain.trim() },
+      requiresApproval: requiresApproval.value,
+    })
   } finally {
     saving.value = false
   }
@@ -100,6 +104,27 @@ async function submit() {
             <option value="moderada">Moderada — substituir jargões, frases mais curtas</option>
             <option value="alta">Alta — linguagem simples, sem termos especializados</option>
           </select>
+        </div>
+
+        <div class="field field--toggle">
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <span class="toggle-label">Controlar quem entra na sala</span>
+              <span v-if="requiresApproval" class="toggle-sublabel">
+                Participantes precisarão de aprovação antes de entrar
+              </span>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              :aria-checked="requiresApproval"
+              class="toggle-btn"
+              :class="{ 'toggle-btn--on': requiresApproval }"
+              @click="requiresApproval = !requiresApproval"
+            >
+              <span class="toggle-thumb" />
+            </button>
+          </div>
         </div>
 
         <div class="context-form__actions">
@@ -194,6 +219,66 @@ async function submit() {
 .required {
   color: #ff9aac;
   margin-left: 2px;
+}
+
+.field--toggle {
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: #1e2840;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.toggle-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toggle-label {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #dce4fa;
+}
+
+.toggle-sublabel {
+  font-size: 0.75rem;
+  color: #8895b3;
+}
+
+.toggle-btn {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 24px;
+  padding: 2px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.toggle-btn--on {
+  background: #4f6ef7;
+}
+
+.toggle-thumb {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 0.2s;
+}
+
+.toggle-btn--on .toggle-thumb {
+  transform: translateX(20px);
 }
 
 .context-form__actions {
