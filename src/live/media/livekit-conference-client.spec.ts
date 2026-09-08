@@ -12,6 +12,8 @@ class FakeRoom {
     identity: 'local-1',
     setMicrophoneEnabled: vi.fn().mockResolvedValue(undefined),
     setCameraEnabled: vi.fn().mockResolvedValue(undefined),
+    publishTrack: vi.fn().mockResolvedValue({}),
+    unpublishTrack: vi.fn().mockResolvedValue(undefined),
   }
   on = vi.fn((event: string, handler: (...args: any[]) => void) => {
     const handlers = this.handlers.get(event) ?? new Set()
@@ -42,6 +44,31 @@ function setup(supported = true) {
 }
 
 describe('LiveKitConferenceClient', () => {
+  it('unpublishes the leased microphone track without stopping its owner', async () => {
+    const { client, room } = setup()
+    const track = { stop: vi.fn() } as unknown as MediaStreamTrack
+    await client.publishMicrophoneTrack(track)
+
+    await client.unpublishMicrophoneTrack()
+    await client.unpublishMicrophoneTrack()
+
+    expect(room.localParticipant.unpublishTrack).toHaveBeenCalledTimes(1)
+    expect(room.localParticipant.unpublishTrack).toHaveBeenCalledWith(track, false)
+    expect(track.stop).not.toHaveBeenCalled()
+  })
+
+  it('publishes a provided microphone track without implicit capture', async () => {
+    const { client, room } = setup()
+    const track = { stop: vi.fn() } as unknown as MediaStreamTrack
+
+    await client.publishMicrophoneTrack(track)
+
+    expect(room.localParticipant.publishTrack).toHaveBeenCalledWith(track, {
+      source: Track.Source.Microphone,
+    })
+    expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled()
+  })
+
   it('finishes local cleanup when the SDK disconnect rejects', async () => {
     const { client, room } = setup()
     const events: any[] = []

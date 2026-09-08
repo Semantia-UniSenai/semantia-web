@@ -8,6 +8,8 @@ class FakeConferenceClient {
   connect = vi.fn().mockResolvedValue(undefined)
   disconnect = vi.fn().mockResolvedValue(undefined)
   setMicrophoneEnabled = vi.fn().mockResolvedValue(undefined)
+  publishMicrophoneTrack = vi.fn().mockResolvedValue(undefined)
+  unpublishMicrophoneTrack = vi.fn().mockResolvedValue(undefined)
   setCameraEnabled = vi.fn().mockResolvedValue(undefined)
   switchDevice = vi.fn().mockResolvedValue(undefined)
   startAudio = vi.fn().mockResolvedValue(undefined)
@@ -37,6 +39,16 @@ function setup() {
     participantToken: 'ephemeral-token',
     expiresInSeconds: 600,
   })
+  const leasedMicrophoneTrack = { stop: vi.fn() } as unknown as MediaStreamTrack
+  const releaseMicrophoneLease = vi.fn()
+  const microphoneSource = {
+    acquire: vi.fn().mockResolvedValue({
+      track: leasedMicrophoneTrack,
+      release: releaseMicrophoneLease,
+    }),
+    reset: vi.fn(),
+    dispose: vi.fn(),
+  }
   const clients: FakeConferenceClient[] = []
   const clientFactory = vi.fn(() => {
     const client = new FakeConferenceClient()
@@ -52,6 +64,7 @@ function setup() {
           ended,
           textConnectionStatus,
           requestMediaCredentials,
+          microphoneSource,
           clientFactory,
         })
         return () => h('div')
@@ -63,6 +76,9 @@ function setup() {
     ended,
     textConnectionStatus,
     requestMediaCredentials,
+    microphoneSource,
+    leasedMicrophoneTrack,
+    releaseMicrophoneLease,
     clients,
     clientFactory,
     media,
@@ -303,6 +319,41 @@ describe('useConferenceMedia', () => {
     expect(context.media.cameraEnabled.value).toBe(true)
   })
 
+  it('releases the microphone lease when provider unpublish fails', async () => {
+    const context = setup()
+    context.joined.value = true
+    await nextTick()
+    await flushPromises()
+    await context.media.toggleMicrophone('microphone-1')
+    context.clients[0]?.unpublishMicrophoneTrack.mockRejectedValueOnce(
+      new Error('unpublish failed'),
+    )
+
+    await expect(
+      context.media.toggleMicrophone('microphone-1'),
+    ).rejects.toThrow('unpublish failed')
+
+    expect(context.releaseMicrophoneLease).toHaveBeenCalledTimes(1)
+    expect(context.media.microphoneEnabled.value).toBe(false)
+  })
+
+  it('releases the microphone lease when provider publication fails', async () => {
+    const context = setup()
+    context.joined.value = true
+    await nextTick()
+    await flushPromises()
+    context.clients[0]?.publishMicrophoneTrack.mockRejectedValueOnce(
+      new Error('publication failed'),
+    )
+
+    await expect(
+      context.media.toggleMicrophone('microphone-1'),
+    ).rejects.toThrow('publication failed')
+
+    expect(context.releaseMicrophoneLease).toHaveBeenCalledTimes(1)
+    expect(context.media.microphoneEnabled.value).toBe(false)
+  })
+
   it('toggles the conference microphone without reloading the room', async () => {
     const context = setup()
     context.joined.value = true
@@ -313,16 +364,13 @@ describe('useConferenceMedia', () => {
     await context.media.toggleMicrophone('microphone-1')
     await context.media.toggleMicrophone('microphone-1')
 
-    expect(connectedClient?.setMicrophoneEnabled).toHaveBeenNthCalledWith(
-      1,
-      true,
-      'microphone-1',
+    expect(context.microphoneSource.acquire).toHaveBeenCalledWith('microphone-1')
+    expect(connectedClient?.publishMicrophoneTrack).toHaveBeenCalledWith(
+      context.leasedMicrophoneTrack,
     )
-    expect(connectedClient?.setMicrophoneEnabled).toHaveBeenNthCalledWith(
-      2,
-      false,
-      'microphone-1',
-    )
+    expect(connectedClient?.unpublishMicrophoneTrack).toHaveBeenCalledTimes(1)
+    expect(context.releaseMicrophoneLease).toHaveBeenCalledTimes(1)
+    expect(connectedClient?.setMicrophoneEnabled).not.toHaveBeenCalled()
     expect(context.media.microphoneEnabled.value).toBe(false)
   })
 
@@ -420,16 +468,33 @@ describe('useConferenceMedia', () => {
       code: 'MEDIA_DEVICE_ERROR',
       message: 'Dispositivo indisponível',
     })
+    await context.media.toggleMicrophone('microphone-1')
 
     await context.media.disconnect()
     await context.media.disconnect()
 
     expect(connectedClient?.disconnect).toHaveBeenCalledTimes(1)
+    expect(context.releaseMicrophoneLease).toHaveBeenCalledTimes(1)
     expect(connectedClient?.listener).toBeNull()
     expect(context.media.mediaStatus.value).toBe('idle')
     expect(context.media.mediaError.value).toBeNull()
     expect(context.media.participants.value).toEqual([])
     expect(context.media.tracks.value).toEqual([])
+    expect(context.media.microphoneEnabled.value).toBe(false)
+    expect(context.media.cameraEnabled.value).toBe(false)
+  })
+
+  it('resets local controls when replacing the provider client', async () => {
+    const context = setup()
+    context.joined.value = true
+    await nextTick()
+    await flushPromises()
+    await context.media.toggleMicrophone('microphone-1')
+    await context.media.toggleCamera('camera-1')
+
+    await context.media.retry()
+
+    expect(context.releaseMicrophoneLease).toHaveBeenCalledTimes(1)
     expect(context.media.microphoneEnabled.value).toBe(false)
     expect(context.media.cameraEnabled.value).toBe(false)
   })

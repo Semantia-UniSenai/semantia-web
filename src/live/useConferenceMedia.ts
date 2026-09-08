@@ -1,6 +1,10 @@
 import { onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { LiveKitConferenceClient } from './media/livekit-conference-client'
 import type { ConferenceClient } from './media/conference-client'
+import type {
+  MicrophoneLease,
+  SharedMicrophoneSource,
+} from './media/shared-microphone-source'
 import {
   ConferenceClientError,
   type ConferenceEvent,
@@ -15,6 +19,7 @@ export interface UseConferenceMediaOptions {
   ended: Ref<boolean>
   textConnectionStatus: Ref<'offline' | 'connecting' | 'connected'>
   requestMediaCredentials: () => Promise<Ack<MediaCredentials>>
+  microphoneSource?: SharedMicrophoneSource
   clientFactory?: () => ConferenceClient
 }
 
@@ -33,6 +38,7 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
   let connecting: Promise<void> | null = null
   let disposed = false
   let attemptVersion = 0
+  let microphoneLease: MicrophoneLease | null = null
   const participantsById = new Map<string, ConferenceParticipantRef>()
   const tracksByKey = new Map<string, ConferenceTrackRef>()
 
@@ -198,14 +204,41 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
 
   async function toggleMicrophone(deviceId?: string): Promise<void> {
     if (!client) return
-    const enabled = !microphoneEnabled.value
-    await client.setMicrophoneEnabled(enabled, deviceId)
-    microphoneEnabled.value = enabled
+    if (microphoneEnabled.value) {
+      try {
+        await client.unpublishMicrophoneTrack()
+      } finally {
+        microphoneLease?.release()
+        microphoneLease = null
+        microphoneEnabled.value = false
+      }
+      return
+    }
+    if (!options.microphoneSource) {
+      await client.setMicrophoneEnabled(true, deviceId)
+      microphoneEnabled.value = true
+      return
+    }
+    const lease = await options.microphoneSource.acquire(deviceId ?? 'default')
+    try {
+      await client.publishMicrophoneTrack(lease.track)
+    } catch (cause) {
+      lease.release()
+      throw cause
+    }
+    microphoneLease = lease
+    microphoneEnabled.value = true
   }
 
   async function cleanupClient(): Promise<void> {
     const currentClient = client
     client = null
+    const activeMicrophoneLease = microphoneLease
+    microphoneLease = null
+    activeMicrophoneLease?.release()
+    microphoneEnabled.value = false
+    cameraEnabled.value = false
+    audioPlaybackBlocked.value = false
     unsubscribeClient?.()
     unsubscribeClient = null
     participantsById.clear()

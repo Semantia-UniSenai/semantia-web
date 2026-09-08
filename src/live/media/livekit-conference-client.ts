@@ -38,6 +38,7 @@ export class LiveKitConferenceClient implements ConferenceClient {
   private readonly runtime: LiveKitRuntime
   private readonly listeners = new Set<(event: ConferenceEvent) => void>()
   private readonly tracks = new Map<string, ConferenceTrackRef>()
+  private publishedMicrophoneTrack: MediaStreamTrack | null = null
   private disconnected = false
 
   constructor(runtime: LiveKitRuntime = browserRuntime) {
@@ -91,6 +92,7 @@ export class LiveKitConferenceClient implements ConferenceClient {
     this.disconnected = true
     for (const track of this.tracks.values()) track.detach()
     this.tracks.clear()
+    this.publishedMicrophoneTrack = null
     this.removeRoomListeners()
     await this.room.disconnect(true).catch(() => undefined)
     this.emit({ type: 'status', status: 'idle' })
@@ -116,6 +118,20 @@ export class LiveKitConferenceClient implements ConferenceClient {
       enabled,
       deviceId ? { deviceId: { ideal: deviceId } } : undefined,
     )
+  }
+
+  async publishMicrophoneTrack(track: MediaStreamTrack): Promise<void> {
+    await this.room.localParticipant.publishTrack(track, {
+      source: Track.Source.Microphone,
+    })
+    this.publishedMicrophoneTrack = track
+  }
+
+  async unpublishMicrophoneTrack(): Promise<void> {
+    const track = this.publishedMicrophoneTrack
+    if (!track) return
+    this.publishedMicrophoneTrack = null
+    await this.room.localParticipant.unpublishTrack(track, false)
   }
 
   async startAudio(): Promise<void> {

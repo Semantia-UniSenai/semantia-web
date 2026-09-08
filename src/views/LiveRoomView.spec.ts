@@ -15,8 +15,12 @@ import type {
 let liveMock: ReturnType<typeof createLiveMock>
 let audioMock: ReturnType<typeof createAudioMock>
 let transcriptionMock: ReturnType<typeof createTranscriptionMock>
+let conferenceMock!: ReturnType<typeof createConferenceMock>
+let sharedMicrophoneSourceMock!: ReturnType<typeof createSharedMicrophoneSourceMock>
+let conferenceOptions: Record<string, unknown> | null
 let transcriptionOptions: {
   onAudioSegment?: (segment: unknown) => Promise<unknown>
+  microphoneSource?: unknown
   onPartial?: unknown
   onFinal?: unknown
 } | null
@@ -29,6 +33,7 @@ const routerMocks = vi.hoisted(() => ({
     query: {},
   },
 }))
+const switchSharedMicrophoneDeviceMock = vi.hoisted(() => vi.fn())
 
 vi.mock('vue-router', () => ({
   RouterLink: {
@@ -52,6 +57,25 @@ vi.mock('../live/useMeetingTranscription', () => ({
     transcriptionOptions = options
     return transcriptionMock
   },
+}))
+
+vi.mock('../live/useConferenceMedia', () => ({
+  useConferenceMedia: (options: Record<string, unknown>) => {
+    conferenceOptions = options
+    return conferenceMock
+  },
+}))
+
+vi.mock('../live/media/shared-microphone-source', () => ({
+  BrowserSharedMicrophoneSource: class {
+    constructor() {
+      return sharedMicrophoneSourceMock
+    }
+  },
+}))
+
+vi.mock('../live/switch-shared-microphone-device', () => ({
+  switchSharedMicrophoneDevice: switchSharedMicrophoneDeviceMock,
 }))
 
 import LiveRoomView from './LiveRoomView.vue'
@@ -99,6 +123,12 @@ function createLiveMock() {
     connect: vi.fn(),
     disconnect: vi.fn(),
     publishAudioSegment: vi.fn().mockResolvedValue({ ok: true }),
+    requestMediaCredentials: vi.fn().mockResolvedValue({
+      ok: true,
+      serverUrl: 'wss://media.example.test',
+      participantToken: 'ephemeral-token',
+      expiresInSeconds: 600,
+    }),
     waitForAudioDrain: vi.fn().mockResolvedValue(true),
     sendChat: vi.fn(),
     raiseHand: vi.fn(),
@@ -142,6 +172,31 @@ function createTranscriptionMock() {
   }
 }
 
+function createConferenceMock() {
+  return {
+    mediaStatus: ref('connected'),
+    mediaError: ref(null),
+    microphoneEnabled: ref(false),
+    cameraEnabled: ref(false),
+    audioPlaybackBlocked: ref(false),
+    participants: ref([]),
+    tracks: ref([]),
+    toggleMicrophone: vi.fn(),
+    toggleCamera: vi.fn(),
+    retry: vi.fn(),
+    startAudio: vi.fn(),
+    disconnect: vi.fn(),
+  }
+}
+
+function createSharedMicrophoneSourceMock() {
+  return {
+    acquire: vi.fn(),
+    reset: vi.fn(),
+    dispose: vi.fn(),
+  }
+}
+
 function mountRoom() {
   return mount(LiveRoomView, {
     attachTo: document.body,
@@ -156,7 +211,9 @@ function mountRoom() {
           template: '<div data-testid="chat-panel"><input data-testid="panel-input"><button data-testid="panel-action">Enviar</button></div>',
         },
         MicControl: {
-          template: '<div data-testid="mic-control">Microfone</div>',
+          emits: ['select-audio-device'],
+          template:
+            '<div data-testid="mic-control">Microfone<button data-testid="select-audio-input" @click="$emit(\'select-audio-device\', \'microphone-2\')">Trocar</button></div>',
         },
       },
     },
@@ -168,9 +225,14 @@ beforeEach(() => {
   liveMock = createLiveMock()
   audioMock = createAudioMock()
   transcriptionMock = createTranscriptionMock()
+  conferenceMock = createConferenceMock()
+  sharedMicrophoneSourceMock = createSharedMicrophoneSourceMock()
+  conferenceOptions = null
   transcriptionOptions = null
   compactViewport = false
   routerMocks.push.mockReset()
+  switchSharedMicrophoneDeviceMock.mockReset()
+  switchSharedMicrophoneDeviceMock.mockResolvedValue(undefined)
 
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
@@ -188,6 +250,37 @@ beforeEach(() => {
 })
 
 describe('LiveRoomView accessible stage layout', () => {
+  it('disposes the physical microphone source when leaving the view', () => {
+    const wrapper = mountRoom()
+
+    wrapper.unmount()
+
+    expect(sharedMicrophoneSourceMock.dispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('routes input selection through the shared microphone transaction', async () => {
+    const wrapper = mountRoom()
+
+    await wrapper.get('[data-testid="select-audio-input"]').trigger('click')
+
+    expect(switchSharedMicrophoneDeviceMock).toHaveBeenCalledWith({
+      deviceId: 'microphone-2',
+      microphoneSource: sharedMicrophoneSourceMock,
+      conference: conferenceMock,
+      transcription: transcriptionMock,
+      stopTest: audioMock.stopTest,
+      selectDevice: audioMock.selectDevice,
+    })
+    expect(transcriptionOptions).not.toHaveProperty('deviceId')
+  })
+
+  it('shares one physical microphone source between call and transcription', () => {
+    mountRoom()
+
+    expect(conferenceOptions?.microphoneSource).toBe(sharedMicrophoneSourceMock)
+    expect(transcriptionOptions?.microphoneSource).toBe(sharedMicrophoneSourceMock)
+  })
+
   it('encaminha somente segmentos PCM ao backend, sem callbacks textuais no cliente', async () => {
     mountRoom()
     expect(transcriptionOptions).not.toHaveProperty('onPartial')

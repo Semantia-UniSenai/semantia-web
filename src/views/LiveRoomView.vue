@@ -8,14 +8,25 @@ import CaptionStage from '../components/live/CaptionStage.vue'
 import ChatPanel from '../components/live/ChatPanel.vue'
 import MicControl from '../components/live/MicControl.vue'
 import { useAudioInputDevices } from '../live/useAudioInputDevices'
+import { useConferenceMedia } from '../live/useConferenceMedia'
 import { useLiveSession } from '../live/useLiveSession'
 import { useMeetingTranscription } from '../live/useMeetingTranscription'
+import { BrowserSharedMicrophoneSource } from '../live/media/shared-microphone-source'
+import { switchSharedMicrophoneDevice } from '../live/switch-shared-microphone-device'
 
 const route = useRoute()
 const router = useRouter()
 const sessionId = computed(() => String(route.params.sessionId))
 const inviteToken = computed(() => typeof route.query.token === 'string' ? route.query.token : undefined)
 const live = useLiveSession()
+const microphoneSource = new BrowserSharedMicrophoneSource()
+const conference = useConferenceMedia({
+  joined: live.joined,
+  ended: live.ended,
+  textConnectionStatus: live.status,
+  requestMediaCredentials: live.requestMediaCredentials,
+  microphoneSource,
+})
 const copied = ref(false)
 const confirmingEnd = ref(false)
 const showContextForm = ref(false)
@@ -32,7 +43,7 @@ let panelMediaQuery: MediaQueryList | null = null
 
 const audioInput = useAudioInputDevices()
 const transcription = useMeetingTranscription({
-  deviceId: audioInput.selectedDeviceId,
+  microphoneSource,
   onAudioSegment: (segment) => live.publishAudioSegment(segment),
 })
 
@@ -66,7 +77,10 @@ onMounted(() => {
   syncPanelMode()
   panelMediaQuery.addEventListener('change', syncPanelMode)
 })
-onBeforeUnmount(() => panelMediaQuery?.removeEventListener('change', syncPanelMode))
+onBeforeUnmount(() => {
+  panelMediaQuery?.removeEventListener('change', syncPanelMode)
+  microphoneSource.dispose()
+})
 watch(() => live.ended.value, (ended) => {
   if (ended) {
     void transcription.stop({ flush: false })
@@ -123,7 +137,14 @@ function skipContext() {
 }
 
 async function changeAudioInput(deviceId: string) {
-  await audioInput.selectDevice(deviceId)
+  await switchSharedMicrophoneDevice({
+    deviceId,
+    microphoneSource,
+    conference,
+    transcription,
+    stopTest: audioInput.stopTest,
+    selectDevice: audioInput.selectDevice,
+  })
 }
 
 async function copyInvite() {
