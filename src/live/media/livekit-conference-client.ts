@@ -104,10 +104,42 @@ export class LiveKitConferenceClient implements ConferenceClient {
   }
 
   async setCameraEnabled(enabled: boolean, deviceId?: string): Promise<void> {
-    await this.room.localParticipant.setCameraEnabled(
+    const publication = await this.room.localParticipant.setCameraEnabled(
       enabled,
       deviceId ? { deviceId: { ideal: deviceId } } : undefined,
     )
+    const participant = this.room.localParticipant
+    const trackKey = `${participant.identity}:${Track.Source.Camera}`
+    if (!enabled || !publication?.track) {
+      const previousTrack = this.tracks.get(trackKey)
+      if (previousTrack) {
+        previousTrack.detach()
+        this.tracks.delete(trackKey)
+        this.emit({ type: 'track-removed', trackKey })
+      }
+      return
+    }
+    const localTrack = publication.track
+    const conferenceTrack: ConferenceTrackRef = {
+      key: trackKey,
+      participantId: participant.identity,
+      participantName: participant.name || participant.identity,
+      kind: 'video',
+      source: Track.Source.Camera,
+      muted: publication.isMuted || localTrack.isMuted,
+      isLocal: true,
+      attach: (element: HTMLMediaElement) => {
+        localTrack.attach(element)
+      },
+      detach: (element?: HTMLMediaElement) => {
+        if (element) localTrack.detach(element)
+        else localTrack.detach()
+      },
+    }
+    const previousTrack = this.tracks.get(trackKey)
+    if (previousTrack) previousTrack.detach()
+    this.tracks.set(trackKey, conferenceTrack)
+    this.emit({ type: 'track-added', track: conferenceTrack })
   }
 
   async setMicrophoneEnabled(

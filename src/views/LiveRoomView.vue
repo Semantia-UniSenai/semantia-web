@@ -6,6 +6,8 @@ import AdmissionQueue from '../components/live/AdmissionQueue.vue'
 import AudienceContextForm from '../components/live/AudienceContextForm.vue'
 import CaptionStage from '../components/live/CaptionStage.vue'
 import ChatPanel from '../components/live/ChatPanel.vue'
+import ConferenceControls from '../components/live/ConferenceControls.vue'
+import ConferenceMediaStage from '../components/live/ConferenceMediaStage.vue'
 import MicControl from '../components/live/MicControl.vue'
 import { useAudioInputDevices } from '../live/useAudioInputDevices'
 import { useConferenceMedia } from '../live/useConferenceMedia'
@@ -97,6 +99,27 @@ async function startTranscription() {
   await transcription.start(audioInput.selectedDeviceId.value)
 }
 
+async function toggleConferenceMicrophone() {
+  try {
+    await audioInput.stopTest()
+    await conference.toggleMicrophone(audioInput.selectedDeviceId.value)
+  } catch {
+    // O composable mantém a falha visível sem interromper sala, chat ou legenda.
+  }
+}
+
+async function toggleConferenceCamera() {
+  await conference.toggleCamera().catch(() => undefined)
+}
+
+async function resumeConferenceAudio() {
+  await conference.startAudio().catch(() => undefined)
+}
+
+async function retryConference() {
+  await conference.retry().catch(() => undefined)
+}
+
 async function saveContext({ context, requiresApproval }: { context: AudienceContext; requiresApproval: boolean }) {
   const id = sessionId.value
   try {
@@ -137,14 +160,18 @@ function skipContext() {
 }
 
 async function changeAudioInput(deviceId: string) {
-  await switchSharedMicrophoneDevice({
-    deviceId,
-    microphoneSource,
-    conference,
-    transcription,
-    stopTest: audioInput.stopTest,
-    selectDevice: audioInput.selectDevice,
-  })
+  try {
+    await switchSharedMicrophoneDevice({
+      deviceId,
+      microphoneSource,
+      conference,
+      transcription,
+      stopTest: audioInput.stopTest,
+      selectDevice: audioInput.selectDevice,
+    })
+  } catch {
+    // Os composables de áudio expõem o erro recuperável na própria central.
+  }
 }
 
 async function copyInvite() {
@@ -311,6 +338,15 @@ function trapPanelFocus(event: KeyboardEvent) {
             :transcript="live.transcript.value"
             :caption-state="captionState"
           />
+          <ConferenceMediaStage
+            v-if="live.session.value"
+            :participants="live.participants.value"
+            :tracks="conference.tracks.value"
+            :audio-playback-blocked="conference.audioPlaybackBlocked.value"
+            :current-participant-id="live.currentParticipantId.value"
+            :local-microphone-enabled="conference.microphoneEnabled.value"
+            @resume-audio="resumeConferenceAudio"
+          />
         </section>
 
         <button
@@ -367,6 +403,16 @@ function trapPanelFocus(event: KeyboardEvent) {
         aria-label="Controles da reunião"
         :inert="isCompactPanel && !!panel"
       >
+        <ConferenceControls
+          v-if="live.session.value && !live.ended.value"
+          :media-status="conference.mediaStatus.value"
+          :media-error="conference.mediaError.value"
+          :microphone-enabled="conference.microphoneEnabled.value"
+          :camera-enabled="conference.cameraEnabled.value"
+          @toggle-microphone="toggleConferenceMicrophone"
+          @toggle-camera="toggleConferenceCamera"
+          @retry="retryConference"
+        />
         <MicControl
           v-if="live.canPublishTranscript.value"
           class="mic"
@@ -572,6 +618,12 @@ function trapPanelFocus(event: KeyboardEvent) {
 .stage > :first-child {
   flex: 1;
   min-height: 0;
+}
+.stage > .conference-media--visual {
+  order: -1;
+  flex: 0 0 auto;
+  max-height: 168px;
+  margin-bottom: 12px;
 }
 .side {
   position: relative;
@@ -917,11 +969,17 @@ function trapPanelFocus(event: KeyboardEvent) {
     border-radius: 0;
   }
   .control-bar :deep(.mic__btn) {
-    min-width: 142px;
+    min-width: 112px;
+    padding-inline: 8px;
+  }
+  .control-bar :deep(.mic__device-trigger) {
+    width: 44px;
+    min-height: 44px;
   }
   .meeting-control,
   .hand.meeting-control {
-    min-width: 48px;
+    min-width: 44px;
+    min-height: 44px;
   }
   .control-icon {
     width: 40px;
@@ -938,11 +996,12 @@ function trapPanelFocus(event: KeyboardEvent) {
 
 @media (max-width: 360px) {
   .control-bar :deep(.mic__btn) {
-    min-width: 128px;
-    padding-inline: 8px;
+    min-width: 96px;
+    padding-inline: 5px;
+    font-size: 10px;
   }
   .control-bar :deep(.mic__device-trigger) {
-    width: 48px;
+    width: 44px;
   }
   .control-icon {
     width: 38px;

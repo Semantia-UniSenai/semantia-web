@@ -44,6 +44,61 @@ function setup(supported = true) {
 }
 
 describe('LiveKitConferenceClient', () => {
+  it('removes the local preview when disabling video', async () => {
+    const { client, room } = setup()
+    const events: any[] = []
+    const track = {
+      kind: Track.Kind.Video,
+      isMuted: false,
+      attach: vi.fn(),
+      detach: vi.fn(),
+    }
+    room.localParticipant.setCameraEnabled
+      .mockResolvedValueOnce({ track, isMuted: false })
+      .mockResolvedValueOnce(undefined)
+    client.onEvent((event: unknown) => events.push(event))
+    await client.setCameraEnabled(true, 'camera-1')
+
+    await client.setCameraEnabled(false)
+
+    expect(track.detach).toHaveBeenCalledTimes(1)
+    expect(events.at(-1)).toEqual({
+      type: 'track-removed',
+      trackKey: 'local-1:camera',
+    })
+  })
+
+  it('exposes the local camera track for preview after enabling video', async () => {
+    const { client, room } = setup()
+    const events: any[] = []
+    const track = {
+      kind: Track.Kind.Video,
+      isMuted: false,
+      attach: vi.fn(),
+      detach: vi.fn(),
+    }
+    room.localParticipant.setCameraEnabled.mockResolvedValueOnce({
+      track,
+      isMuted: false,
+    })
+    client.onEvent((event: unknown) => events.push(event))
+
+    await client.setCameraEnabled(true, 'camera-1')
+
+    expect(events.at(-1)).toEqual({
+      type: 'track-added',
+      track: expect.objectContaining({
+        key: 'local-1:camera',
+        participantId: 'local-1',
+        participantName: 'local-1',
+        kind: 'video',
+        source: 'camera',
+        muted: false,
+        isLocal: true,
+      }),
+    })
+  })
+
   it('unpublishes the leased microphone track without stopping its owner', async () => {
     const { client, room } = setup()
     const track = { stop: vi.fn() } as unknown as MediaStreamTrack

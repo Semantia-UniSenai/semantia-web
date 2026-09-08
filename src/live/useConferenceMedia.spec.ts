@@ -319,6 +319,69 @@ describe('useConferenceMedia', () => {
     expect(context.media.cameraEnabled.value).toBe(true)
   })
 
+  it('releases a microphone activation that finishes after media disconnect', async () => {
+    const context = setup()
+    context.joined.value = true
+    await nextTick()
+    await flushPromises()
+    let resolvePublication!: () => void
+    const publication = new Promise<void>((resolve) => {
+      resolvePublication = resolve
+    })
+    context.clients[0]?.publishMicrophoneTrack.mockReturnValue(publication)
+    const toggle = context.media.toggleMicrophone('microphone-1')
+    await flushPromises()
+
+    await context.media.disconnect()
+    resolvePublication()
+    await toggle
+
+    expect(context.releaseMicrophoneLease).toHaveBeenCalledTimes(1)
+    expect(context.media.microphoneEnabled.value).toBe(false)
+  })
+
+  it('coalesces concurrent conference camera toggles', async () => {
+    const context = setup()
+    context.joined.value = true
+    await nextTick()
+    await flushPromises()
+    let resolveCamera!: () => void
+    const cameraOperation = new Promise<void>((resolve) => {
+      resolveCamera = resolve
+    })
+    context.clients[0]?.setCameraEnabled.mockReturnValue(cameraOperation)
+
+    const firstToggle = context.media.toggleCamera('camera-1')
+    const secondToggle = context.media.toggleCamera('camera-1')
+    resolveCamera()
+    await Promise.all([firstToggle, secondToggle])
+
+    expect(context.clients[0]?.setCameraEnabled).toHaveBeenCalledTimes(1)
+    expect(context.media.cameraEnabled.value).toBe(true)
+  })
+
+  it('coalesces concurrent conference microphone toggles', async () => {
+    const context = setup()
+    context.joined.value = true
+    await nextTick()
+    await flushPromises()
+    let resolvePublication!: () => void
+    const publication = new Promise<void>((resolve) => {
+      resolvePublication = resolve
+    })
+    context.clients[0]?.publishMicrophoneTrack.mockReturnValue(publication)
+
+    const firstToggle = context.media.toggleMicrophone('microphone-1')
+    const secondToggle = context.media.toggleMicrophone('microphone-1')
+    await Promise.resolve()
+    resolvePublication()
+    await Promise.all([firstToggle, secondToggle])
+
+    expect(context.microphoneSource.acquire).toHaveBeenCalledTimes(1)
+    expect(context.clients[0]?.publishMicrophoneTrack).toHaveBeenCalledTimes(1)
+    expect(context.media.microphoneEnabled.value).toBe(true)
+  })
+
   it('releases the microphone lease when provider unpublish fails', async () => {
     const context = setup()
     context.joined.value = true
@@ -601,6 +664,26 @@ describe('useConferenceMedia', () => {
     })
     expect(context.media.textConnectionStatus.value).toBe('connected')
     expect(context.clientFactory).not.toHaveBeenCalled()
+  })
+
+  it('reports a camera action failure without disconnecting the room', async () => {
+    const context = setup()
+    context.joined.value = true
+    await nextTick()
+    await flushPromises()
+    context.clients[0]?.setCameraEnabled.mockRejectedValueOnce(
+      new Error('camera failed'),
+    )
+
+    await expect(context.media.toggleCamera('camera-1')).rejects.toThrow(
+      'camera failed',
+    )
+
+    expect(context.media.mediaError.value).toEqual({
+      code: 'MEDIA_CONTROL_FAILED',
+      message: 'Não foi possível alterar a câmera da chamada',
+    })
+    expect(context.media.mediaStatus.value).toBe('connected')
   })
 
   it('starts blocked audio only after an explicit user action', async () => {

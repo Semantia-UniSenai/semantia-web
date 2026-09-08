@@ -39,8 +39,17 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
   let disposed = false
   let attemptVersion = 0
   let microphoneLease: MicrophoneLease | null = null
+  let microphoneOperation: Promise<void> | null = null
+  let cameraOperation: Promise<void> | null = null
   const participantsById = new Map<string, ConferenceParticipantRef>()
   const tracksByKey = new Map<string, ConferenceTrackRef>()
+
+  function reportControlError(cause: unknown, message: string): void {
+    mediaError.value =
+      cause instanceof ConferenceClientError
+        ? { code: cause.code, message: cause.message }
+        : { code: 'MEDIA_CONTROL_FAILED', message }
+  }
 
   function handleEvent(event: ConferenceEvent): void {
     if (event.type === 'status') {
@@ -184,29 +193,63 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
 
   async function startAudio(): Promise<void> {
     if (!client) return
-    await client.startAudio()
-    audioPlaybackBlocked.value = false
+    try {
+      await client.startAudio()
+      audioPlaybackBlocked.value = false
+      mediaError.value = null
+    } catch (cause) {
+      reportControlError(cause, 'Não foi possível ativar o áudio da chamada')
+      throw cause
+    }
   }
 
   async function switchDevice(
     kind: MediaDeviceKind,
     deviceId: string,
   ): Promise<void> {
-    await client?.switchDevice(kind, deviceId)
+    try {
+      await client?.switchDevice(kind, deviceId)
+      mediaError.value = null
+    } catch (cause) {
+      reportControlError(cause, 'Não foi possível trocar o dispositivo da chamada')
+      throw cause
+    }
   }
 
-  async function toggleCamera(deviceId?: string): Promise<void> {
-    if (!client) return
+  async function performCameraToggle(deviceId?: string): Promise<void> {
+    const activeClient = client
+    if (!activeClient) return
     const enabled = !cameraEnabled.value
-    await client.setCameraEnabled(enabled, deviceId)
-    cameraEnabled.value = enabled
+    try {
+      await activeClient.setCameraEnabled(enabled, deviceId)
+      if (client !== activeClient) return
+      cameraEnabled.value = enabled
+      mediaError.value = null
+    } catch (cause) {
+      reportControlError(cause, 'Não foi possível alterar a câmera da chamada')
+      throw cause
+    }
   }
 
-  async function toggleMicrophone(deviceId?: string): Promise<void> {
-    if (!client) return
+  function toggleCamera(deviceId?: string): Promise<void> {
+    if (cameraOperation) return cameraOperation
+    const operation = performCameraToggle(deviceId).finally(() => {
+      if (cameraOperation === operation) cameraOperation = null
+    })
+    cameraOperation = operation
+    return operation
+  }
+
+  async function performMicrophoneToggle(deviceId?: string): Promise<void> {
+    const activeClient = client
+    if (!activeClient) return
     if (microphoneEnabled.value) {
       try {
-        await client.unpublishMicrophoneTrack()
+        await activeClient.unpublishMicrophoneTrack()
+        mediaError.value = null
+      } catch (cause) {
+        reportControlError(cause, 'Não foi possível alterar o microfone da chamada')
+        throw cause
       } finally {
         microphoneLease?.release()
         microphoneLease = null
@@ -215,19 +258,45 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
       return
     }
     if (!options.microphoneSource) {
-      await client.setMicrophoneEnabled(true, deviceId)
-      microphoneEnabled.value = true
-      return
+      try {
+        await activeClient.setMicrophoneEnabled(true, deviceId)
+        if (client !== activeClient) return
+        microphoneEnabled.value = true
+        mediaError.value = null
+        return
+      } catch (cause) {
+        reportControlError(cause, 'Não foi possível alterar o microfone da chamada')
+        throw cause
+      }
     }
     const lease = await options.microphoneSource.acquire(deviceId ?? 'default')
+    if (client !== activeClient) {
+      lease.release()
+      return
+    }
     try {
-      await client.publishMicrophoneTrack(lease.track)
+      await activeClient.publishMicrophoneTrack(lease.track)
     } catch (cause) {
       lease.release()
+      reportControlError(cause, 'Não foi possível alterar o microfone da chamada')
       throw cause
+    }
+    if (client !== activeClient) {
+      lease.release()
+      return
     }
     microphoneLease = lease
     microphoneEnabled.value = true
+    mediaError.value = null
+  }
+
+  function toggleMicrophone(deviceId?: string): Promise<void> {
+    if (microphoneOperation) return microphoneOperation
+    const operation = performMicrophoneToggle(deviceId).finally(() => {
+      if (microphoneOperation === operation) microphoneOperation = null
+    })
+    microphoneOperation = operation
+    return operation
   }
 
   async function cleanupClient(): Promise<void> {
