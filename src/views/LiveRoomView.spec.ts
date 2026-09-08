@@ -89,6 +89,8 @@ function createLiveMock() {
     transcript: ref<TranscriptEntry[]>([]),
     pendingAudioCount: ref(0),
     transcriptionStatus: ref(null),
+    admissionQueue: ref([]),
+    admissionStatus: ref<'none' | 'waiting' | 'denied'>('none'),
     ended,
     canPublishTranscript: computed(() => role.value === 'HOST' && !ended.value),
     joined: computed(() => true),
@@ -101,6 +103,10 @@ function createLiveMock() {
     raiseHand: vi.fn(),
     lowerHand: vi.fn(),
     lowerParticipantHand: vi.fn(),
+    approveAdmission: vi.fn(),
+    rejectAdmission: vi.fn(),
+    updateAudienceContext: vi.fn(),
+    updateAdmissionPolicy: vi.fn(),
     endSession: vi.fn(),
   }
 }
