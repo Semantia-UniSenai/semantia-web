@@ -35,6 +35,7 @@ onBeforeUnmount(() => {
     class="conference-track conference-track--audio"
     autoplay
     playsinline
+    :aria-label="`Áudio de ${track.participantName}`"
   ></audio>
   <video
     v-else

@@ -28,6 +28,8 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
   const mediaError = ref<AckError | null>(null)
   const microphoneEnabled = ref(false)
   const cameraEnabled = ref(false)
+  const microphonePending = ref(false)
+  const cameraPending = ref(false)
   const audioPlaybackBlocked = ref(false)
   const participants = ref<ConferenceParticipantRef[]>([])
   const tracks = ref<ConferenceTrackRef[]>([])
@@ -35,6 +37,7 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
     options.clientFactory ?? (() => new LiveKitConferenceClient())
   let client: ConferenceClient | null = null
   let unsubscribeClient: (() => void) | null = null
+  let unsubscribeMicrophoneSource: (() => void) | null = null
   let connecting: Promise<void> | null = null
   let disposed = false
   let attemptVersion = 0
@@ -50,6 +53,37 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
         ? { code: cause.code, message: cause.message }
         : { code: 'MEDIA_CONTROL_FAILED', message }
   }
+
+  function reportDeviceCaptureError(
+    cause: unknown,
+    device: 'microfone' | 'câmera',
+  ): void {
+    if (cause instanceof DOMException && cause.name === 'NotAllowedError') {
+      mediaError.value = {
+        code: 'MEDIA_DEVICE_NOT_ALLOWED',
+        message: `Permita ${device === 'câmera' ? 'a' : 'o'} ${device} nas configurações do navegador e tente novamente`,
+      }
+      return
+    }
+    reportControlError(cause, `Não foi possível alterar ${device === 'câmera' ? 'a' : 'o'} ${device} da chamada`)
+  }
+
+  function handleMicrophoneSourceEnded(): void {
+    const activeClient = client
+    const wasInUse = microphoneEnabled.value || microphonePending.value
+    microphoneLease = null
+    microphoneEnabled.value = false
+    microphonePending.value = false
+    if (!wasInUse) return
+    mediaError.value = {
+      code: 'MEDIA_DEVICE_ENDED',
+      message: 'O microfone foi desconectado. Escolha uma entrada e tente novamente',
+    }
+    void activeClient?.unpublishMicrophoneTrack().catch(() => undefined)
+  }
+
+  unsubscribeMicrophoneSource =
+    options.microphoneSource?.onEnded?.(handleMicrophoneSourceEnded) ?? null
 
   function handleEvent(event: ConferenceEvent): void {
     if (event.type === 'status') {
@@ -188,6 +222,8 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
 
   onBeforeUnmount(() => {
     disposed = true
+    unsubscribeMicrophoneSource?.()
+    unsubscribeMicrophoneSource = null
     void disconnect()
   })
 
@@ -216,9 +252,17 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
     }
   }
 
+  async function requireConnectedClient(): Promise<ConferenceClient> {
+    if (!client || mediaStatus.value !== 'connected') await connect()
+    if (client && mediaStatus.value === 'connected') return client
+    throw new ConferenceClientError(
+      mediaError.value?.code ?? 'MEDIA_UNAVAILABLE',
+      mediaError.value?.message ?? 'Áudio e vídeo ainda não estão disponíveis',
+    )
+  }
+
   async function performCameraToggle(deviceId?: string): Promise<void> {
-    const activeClient = client
-    if (!activeClient) return
+    const activeClient = await requireConnectedClient()
     const enabled = !cameraEnabled.value
     try {
       await activeClient.setCameraEnabled(enabled, deviceId)
@@ -226,23 +270,26 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
       cameraEnabled.value = enabled
       mediaError.value = null
     } catch (cause) {
-      reportControlError(cause, 'Não foi possível alterar a câmera da chamada')
+      reportDeviceCaptureError(cause, 'câmera')
       throw cause
     }
   }
 
   function toggleCamera(deviceId?: string): Promise<void> {
     if (cameraOperation) return cameraOperation
+    cameraPending.value = true
     const operation = performCameraToggle(deviceId).finally(() => {
-      if (cameraOperation === operation) cameraOperation = null
+      if (cameraOperation === operation) {
+        cameraOperation = null
+        cameraPending.value = false
+      }
     })
     cameraOperation = operation
     return operation
   }
 
   async function performMicrophoneToggle(deviceId?: string): Promise<void> {
-    const activeClient = client
-    if (!activeClient) return
+    const activeClient = await requireConnectedClient()
     if (microphoneEnabled.value) {
       try {
         await activeClient.unpublishMicrophoneTrack()
@@ -269,7 +316,13 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
         throw cause
       }
     }
-    const lease = await options.microphoneSource.acquire(deviceId ?? 'default')
+    let lease: MicrophoneLease
+    try {
+      lease = await options.microphoneSource.acquire(deviceId ?? 'default')
+    } catch (cause) {
+      reportDeviceCaptureError(cause, 'microfone')
+      throw cause
+    }
     if (client !== activeClient) {
       lease.release()
       return
@@ -292,8 +345,12 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
 
   function toggleMicrophone(deviceId?: string): Promise<void> {
     if (microphoneOperation) return microphoneOperation
+    microphonePending.value = true
     const operation = performMicrophoneToggle(deviceId).finally(() => {
-      if (microphoneOperation === operation) microphoneOperation = null
+      if (microphoneOperation === operation) {
+        microphoneOperation = null
+        microphonePending.value = false
+      }
     })
     microphoneOperation = operation
     return operation
@@ -325,6 +382,8 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
     mediaError.value = null
     microphoneEnabled.value = false
     cameraEnabled.value = false
+    microphonePending.value = false
+    cameraPending.value = false
     audioPlaybackBlocked.value = false
   }
 
@@ -340,6 +399,8 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
     mediaError,
     microphoneEnabled,
     cameraEnabled,
+    microphonePending,
+    cameraPending,
     audioPlaybackBlocked,
     participants,
     tracks,

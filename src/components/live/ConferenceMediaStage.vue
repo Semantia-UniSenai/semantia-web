@@ -13,10 +13,12 @@ const props = withDefaults(
     audioPlaybackBlocked: boolean
     currentParticipantId?: string | null
     localMicrophoneEnabled?: boolean
+    raisedParticipantIds?: readonly string[]
   }>(),
   {
     currentParticipantId: null,
     localMicrophoneEnabled: false,
+    raisedParticipantIds: () => [],
   },
 )
 
@@ -45,6 +47,18 @@ function microphoneActive(participantId: string) {
       !track.muted,
   )
 }
+
+function cameraStatus(participantId: string) {
+  return videoTrackFor(participantId) ? 'Câmera ativa' : 'Câmera desligada'
+}
+
+function microphoneStatus(participantId: string) {
+  return microphoneActive(participantId) ? 'Microfone ativo' : 'Microfone desligado'
+}
+
+function handRaised(participantId: string) {
+  return props.raisedParticipantIds.includes(participantId)
+}
 </script>
 
 <template>
@@ -65,6 +79,7 @@ function microphoneActive(participantId: string) {
         class="conference-tile"
         role="listitem"
         data-testid="conference-tile"
+        :aria-label="`Vídeo de ${participant.name}. ${cameraStatus(participant.participantId)}. ${microphoneStatus(participant.participantId)}.${handRaised(participant.participantId) ? ' Mão levantada.' : ''}`"
       >
         <ConferenceTrackElement
           v-if="videoTrackFor(participant.participantId)"
@@ -77,9 +92,26 @@ function microphoneActive(participantId: string) {
           <strong>
             {{ participant.name }}<span v-if="participant.participantId === currentParticipantId"> (você)</span>
           </strong>
-          <span>
-            {{ videoTrackFor(participant.participantId) ? 'Câmera ativa' : 'Câmera desligada' }}
-            · {{ microphoneActive(participant.participantId) ? 'Microfone ativo' : 'Microfone desligado' }}
+          <span class="conference-tile__status" aria-hidden="true">
+            <span
+              class="conference-tile__status-icon"
+              :class="{ active: !!videoTrackFor(participant.participantId) }"
+              :title="cameraStatus(participant.participantId)"
+            >
+              <svg viewBox="0 0 24 24"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/><path v-if="!videoTrackFor(participant.participantId)" d="M4 4l16 16"/></svg>
+            </span>
+            <span
+              class="conference-tile__status-icon"
+              :class="{ active: microphoneActive(participant.participantId) }"
+              :title="microphoneStatus(participant.participantId)"
+            >
+              <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path v-if="!microphoneActive(participant.participantId)" d="M4 4l16 16"/></svg>
+            </span>
+            <span
+              v-if="handRaised(participant.participantId)"
+              class="conference-tile__status-icon conference-tile__status-icon--hand"
+              title="Mão levantada"
+            >✋</span>
           </span>
         </div>
       </article>
@@ -140,28 +172,68 @@ function microphoneActive(participantId: string) {
 
 .conference-tile__identity {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
-  left: 8px;
-  display: grid;
-  gap: 1px;
-  padding: 6px 8px;
-  border-radius: 10px;
+  right: auto;
+  bottom: 6px;
+  left: 6px;
+  max-width: min(calc(100% - 12px), 72%);
+  min-height: 28px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
   color: #f4f7ff;
-  background: rgba(4, 8, 18, 0.78);
-  backdrop-filter: blur(8px);
+  background: rgba(4, 8, 18, 0.68);
+  backdrop-filter: blur(6px);
 }
 
 .conference-tile__identity strong {
+  min-width: 0;
   overflow: hidden;
-  font-size: 12px;
+  font-size: 10px;
+  line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.conference-tile__identity span {
-  color: #b7c2d8;
-  font-size: 9px;
+.conference-tile__status {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.conference-tile__status-icon {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #abb6cd;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.conference-tile__status-icon.active {
+  color: #7fe1bb;
+  background: rgba(70, 215, 149, 0.12);
+}
+
+.conference-tile__status-icon--hand {
+  color: #ffe083;
+  background: rgba(244, 185, 66, 0.18);
+  font-size: 10px;
+}
+
+.conference-tile__status-icon svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .conference-media__resume {

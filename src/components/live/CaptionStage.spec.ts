@@ -27,6 +27,13 @@ beforeEach(() => {
 })
 
 describe('CaptionStage', () => {
+  it('não promete fala ao vivo enquanto a transcrição está pausada', () => {
+    const waiting = mountStage({ captionState: 'paused' }).get('.captions__waiting').text()
+
+    expect(waiting).toContain('Ative a transcrição')
+    expect(waiting).not.toContain('Aguardando o comunicador falar')
+  })
+
   it('sem final canônico mostra o estado de espera', () => {
     expect(mountStage().find('.captions__waiting').text()).toContain(
       'Aguardando o comunicador falar',

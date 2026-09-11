@@ -15,6 +15,27 @@ function fakeTrack(label: string) {
 }
 
 describe('BrowserSharedMicrophoneSource', () => {
+  it('notifies logical consumers when the physical microphone ends', async () => {
+    const baseTrack = fakeTrack('base')
+    baseTrack.clone.mockReturnValueOnce(fakeTrack('clone'))
+    const source = new BrowserSharedMicrophoneSource(
+      vi.fn().mockResolvedValue({
+        getAudioTracks: () => [baseTrack],
+        getTracks: () => [baseTrack],
+      }) as never,
+    )
+    const endedListener = vi.fn()
+    source.onEnded(endedListener)
+    await source.acquire('microphone-1')
+    const ended = baseTrack.addEventListener.mock.calls.find(
+      ([eventName]) => eventName === 'ended',
+    )?.[1] as (() => void) | undefined
+
+    ended?.()
+
+    expect(endedListener).toHaveBeenCalledTimes(1)
+  })
+
   it('invalidates active clones when the physical track ends externally', async () => {
     const firstBase = fakeTrack('first-base')
     const firstClone = fakeTrack('first-clone')

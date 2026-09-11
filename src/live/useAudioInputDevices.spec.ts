@@ -12,6 +12,7 @@ const closeContext = vi.fn().mockResolvedValue(undefined)
 const resumeContext = vi.fn().mockResolvedValue(undefined)
 const disconnectSource = vi.fn()
 const disconnectAnalyser = vi.fn()
+const connectAnalyser = vi.fn()
 const getUserMedia = vi.fn()
 const enumerateDevices = vi.fn()
 let deviceChangeHandler: (() => void) | null = null
@@ -29,10 +30,13 @@ const analyser = {
     buffer[0] = 128 + Math.round(sampleAmplitude * 127)
   },
   disconnect: disconnectAnalyser,
+  connect: connectAnalyser,
 }
+const destination = { kind: 'speaker-output' }
 
 class FakeAudioContext {
   state: AudioContextState = 'running'
+  destination = destination
   createMediaStreamSource = vi.fn(() => source)
   createAnalyser = vi.fn(() => analyser)
   resume = resumeContext
@@ -104,6 +108,17 @@ afterEach(() => {
 })
 
 describe('useAudioInputDevices', () => {
+  it('reproduces the selected microphone locally only when monitoring is explicit', async () => {
+    const { api } = mountDevices()
+
+    await api.startTest(true)
+
+    expect(connectAnalyser).toHaveBeenCalledWith(destination)
+    expect(api.testMonitorEnabled.value).toBe(true)
+    await api.stopTest()
+    expect(api.testMonitorEnabled.value).toBe(false)
+  })
+
   it('solicita permissão, lista apenas entradas com labels e libera a stream temporária', async () => {
     const { api } = mountDevices()
 

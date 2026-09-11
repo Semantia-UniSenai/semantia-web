@@ -41,6 +41,7 @@ function setup() {
   })
   const leasedMicrophoneTrack = { stop: vi.fn() } as unknown as MediaStreamTrack
   const releaseMicrophoneLease = vi.fn()
+  let microphoneEndedListener: (() => void) | null = null
   const microphoneSource = {
     acquire: vi.fn().mockResolvedValue({
       track: leasedMicrophoneTrack,
@@ -48,6 +49,12 @@ function setup() {
     }),
     reset: vi.fn(),
     dispose: vi.fn(),
+    onEnded: vi.fn((listener: () => void) => {
+      microphoneEndedListener = listener
+      return () => {
+        if (microphoneEndedListener === listener) microphoneEndedListener = null
+      }
+    }),
   }
   const clients: FakeConferenceClient[] = []
   const clientFactory = vi.fn(() => {
@@ -79,6 +86,7 @@ function setup() {
     microphoneSource,
     leasedMicrophoneTrack,
     releaseMicrophoneLease,
+    fireMicrophoneEnded: () => microphoneEndedListener?.(),
     clients,
     clientFactory,
     media,
@@ -87,6 +95,22 @@ function setup() {
 }
 
 describe('useConferenceMedia', () => {
+  it('reconnects media from a failed state when the user activates the camera', async () => {
+    const context = setup()
+    context.requestMediaCredentials.mockRejectedValueOnce(new Error('temporary failure'))
+    context.joined.value = true
+    await nextTick()
+    await flushPromises()
+    expect(context.media.mediaStatus.value).toBe('failed')
+
+    await context.media.toggleCamera('camera-1')
+
+    expect(context.requestMediaCredentials).toHaveBeenCalledTimes(2)
+    expect(context.clients).toHaveLength(1)
+    expect(context.clients[0]?.setCameraEnabled).toHaveBeenCalledWith(true, 'camera-1')
+    expect(context.media.cameraEnabled.value).toBe(true)
+  })
+
   it('contains a rejected credential request inside media state', async () => {
     const context = setup()
     context.requestMediaCredentials.mockRejectedValueOnce(
@@ -303,6 +327,46 @@ describe('useConferenceMedia', () => {
     expect(context.requestMediaCredentials).toHaveBeenCalledTimes(1)
   })
 
+  it('explains how to recover when camera permission is denied', async () => {
+    const context = setup()
+    context.joined.value = true
+    await nextTick()
+    await flushPromises()
+    context.clients[0]?.setCameraEnabled.mockRejectedValueOnce(
+      new DOMException('Permission denied', 'NotAllowedError'),
+    )
+
+    await expect(context.media.toggleCamera('camera-1')).rejects.toMatchObject({
+      name: 'NotAllowedError',
+    })
+
+    expect(context.media.mediaError.value).toEqual({
+      code: 'MEDIA_DEVICE_NOT_ALLOWED',
+      message: 'Permita a câmera nas configurações do navegador e tente novamente',
+    })
+  })
+
+  it('exposes camera activation as pending until permission and publication finish', async () => {
+    const context = setup()
+    context.joined.value = true
+    await nextTick()
+    await flushPromises()
+    let resolveCamera!: () => void
+    context.clients[0]?.setCameraEnabled.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveCamera = resolve
+      }),
+    )
+
+    const toggle = context.media.toggleCamera('camera-1')
+    await Promise.resolve()
+
+    expect(context.media.cameraPending.value).toBe(true)
+    resolveCamera()
+    await toggle
+    expect(context.media.cameraPending.value).toBe(false)
+  })
+
   it('toggles the conference camera without reloading the room', async () => {
     const context = setup()
     context.joined.value = true
@@ -358,6 +422,65 @@ describe('useConferenceMedia', () => {
 
     expect(context.clients[0]?.setCameraEnabled).toHaveBeenCalledTimes(1)
     expect(context.media.cameraEnabled.value).toBe(true)
+  })
+
+  it('exposes microphone activation as pending until permission and publication finish', async () => {
+    const context = setup()
+    context.joined.value = true
+    await nextTick()
+    await flushPromises()
+    let resolvePublication!: () => void
+    context.clients[0]?.publishMicrophoneTrack.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolvePublication = resolve
+      }),
+    )
+
+    const toggle = context.media.toggleMicrophone('microphone-1')
+    await Promise.resolve()
+
+    expect(context.media.microphonePending.value).toBe(true)
+    resolvePublication()
+    await toggle
+    expect(context.media.microphonePending.value).toBe(false)
+  })
+
+  it('explains how to recover when microphone permission is denied', async () => {
+    const context = setup()
+    context.joined.value = true
+    await nextTick()
+    await flushPromises()
+    context.microphoneSource.acquire.mockRejectedValueOnce(
+      new DOMException('Permission denied', 'NotAllowedError'),
+    )
+
+    await expect(context.media.toggleMicrophone('microphone-1')).rejects.toMatchObject({
+      name: 'NotAllowedError',
+    })
+
+    expect(context.media.mediaError.value).toEqual({
+      code: 'MEDIA_DEVICE_NOT_ALLOWED',
+      message: 'Permita o microfone nas configurações do navegador e tente novamente',
+    })
+  })
+
+  it('turns the call microphone off when the physical source disappears', async () => {
+    const context = setup()
+    context.joined.value = true
+    await nextTick()
+    await flushPromises()
+    await context.media.toggleMicrophone('microphone-1')
+
+    context.fireMicrophoneEnded()
+    await flushPromises()
+
+    expect(context.media.microphoneEnabled.value).toBe(false)
+    expect(context.clients[0]?.unpublishMicrophoneTrack).toHaveBeenCalledTimes(1)
+    expect(context.media.mediaError.value).toEqual({
+      code: 'MEDIA_DEVICE_ENDED',
+      message: 'O microfone foi desconectado. Escolha uma entrada e tente novamente',
+    })
+    expect(context.media.textConnectionStatus.value).toBe('connected')
   })
 
   it('coalesces concurrent conference microphone toggles', async () => {

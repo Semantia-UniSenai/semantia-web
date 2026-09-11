@@ -10,6 +10,7 @@ import ConferenceControls from '../components/live/ConferenceControls.vue'
 import ConferenceMediaStage from '../components/live/ConferenceMediaStage.vue'
 import MicControl from '../components/live/MicControl.vue'
 import { useAudioInputDevices } from '../live/useAudioInputDevices'
+import { useVideoInputDevices } from '../live/useVideoInputDevices'
 import { useConferenceMedia } from '../live/useConferenceMedia'
 import { useLiveSession } from '../live/useLiveSession'
 import { useMeetingTranscription } from '../live/useMeetingTranscription'
@@ -44,6 +45,7 @@ let lastPanelTrigger: MeetingPanel = 'chat'
 let panelMediaQuery: MediaQueryList | null = null
 
 const audioInput = useAudioInputDevices()
+const videoInput = useVideoInputDevices()
 const transcription = useMeetingTranscription({
   microphoneSource,
   onAudioSegment: (segment) => live.publishAudioSegment(segment),
@@ -59,6 +61,9 @@ const asrQualityStatus = computed<'idle' | 'ready' | 'processing' | 'error'>(() 
 
 const backTo = computed(() => '/app/salas')
 const myHand = computed(() => live.raisedHands.value.some((hand) => hand.participantId === live.currentParticipantId.value))
+const raisedParticipantIds = computed(() =>
+  live.raisedHands.value.map((hand) => hand.participantId),
+)
 const captionState = computed<'available' | 'paused' | 'preparing' | 'listening' | 'reconnecting' | 'ended'>(() => {
   if (live.ended.value) return 'ended'
   if (live.status.value !== 'connected') return 'reconnecting'
@@ -75,6 +80,7 @@ const meetingStatusLabel = computed(() => {
 onMounted(() => {
   live.connect(sessionId.value, inviteToken.value)
   void audioInput.refresh(false)
+  void videoInput.refresh(false)
   panelMediaQuery = window.matchMedia('(max-width: 1023px)')
   syncPanelMode()
   panelMediaQuery.addEventListener('change', syncPanelMode)
@@ -109,7 +115,36 @@ async function toggleConferenceMicrophone() {
 }
 
 async function toggleConferenceCamera() {
-  await conference.toggleCamera().catch(() => undefined)
+  await videoInput.stopTest()
+  await conference.toggleCamera(videoInput.selectedDeviceId.value).catch(() => undefined)
+}
+
+async function changeVideoInput(deviceId: string) {
+  await videoInput.selectDevice(deviceId)
+  if (!conference.cameraEnabled.value) return
+  await conference.switchDevice('videoinput', deviceId).catch(() => undefined)
+}
+
+async function startLocalMicrophoneTest() {
+  if (conference.microphoneEnabled.value) {
+    try {
+      await conference.toggleMicrophone(audioInput.selectedDeviceId.value)
+    } catch {
+      return
+    }
+  }
+  await audioInput.startTest(true)
+}
+
+async function startLocalCameraTest() {
+  if (conference.cameraEnabled.value) {
+    try {
+      await conference.toggleCamera(videoInput.selectedDeviceId.value)
+    } catch {
+      return
+    }
+  }
+  await videoInput.startTest()
 }
 
 async function resumeConferenceAudio() {
@@ -345,6 +380,7 @@ function trapPanelFocus(event: KeyboardEvent) {
             :audio-playback-blocked="conference.audioPlaybackBlocked.value"
             :current-participant-id="live.currentParticipantId.value"
             :local-microphone-enabled="conference.microphoneEnabled.value"
+            :raised-participant-ids="raisedParticipantIds"
             @resume-audio="resumeConferenceAudio"
           />
         </section>
@@ -409,8 +445,33 @@ function trapPanelFocus(event: KeyboardEvent) {
           :media-error="conference.mediaError.value"
           :microphone-enabled="conference.microphoneEnabled.value"
           :camera-enabled="conference.cameraEnabled.value"
+          :microphone-pending="conference.microphonePending.value"
+          :camera-pending="conference.cameraPending.value"
+          :video-devices-supported="videoInput.supported"
+          :video-devices="videoInput.devices.value"
+          :selected-video-device-id="videoInput.selectedDeviceId.value"
+          :video-devices-loading="videoInput.loading.value"
+          :video-device-error="videoInput.error.value"
+          :camera-test-state="videoInput.testState.value"
+          :camera-test-stream="videoInput.testStream.value"
+          :audio-devices-supported="audioInput.supported"
+          :audio-devices="audioInput.devices.value"
+          :selected-audio-device-id="audioInput.selectedDeviceId.value"
+          :audio-devices-loading="audioInput.loading.value"
+          :audio-device-error="audioInput.error.value"
+          :microphone-test-state="audioInput.testState.value"
+          :microphone-test-level="audioInput.testLevel.value"
+          :microphone-test-monitor-enabled="audioInput.testMonitorEnabled.value"
           @toggle-microphone="toggleConferenceMicrophone"
           @toggle-camera="toggleConferenceCamera"
+          @refresh-video-devices="videoInput.refresh"
+          @select-video-device="changeVideoInput"
+          @refresh-audio-devices="audioInput.refresh"
+          @select-audio-device="changeAudioInput"
+          @start-camera-test="startLocalCameraTest"
+          @stop-camera-test="videoInput.stopTest"
+          @start-microphone-test="startLocalMicrophoneTest"
+          @stop-microphone-test="audioInput.stopTest"
           @retry="retryConference"
         />
         <MicControl
@@ -427,20 +488,9 @@ function trapPanelFocus(event: KeyboardEvent) {
           :backend-engine="live.transcriptionStatus.value?.engine ?? undefined"
           :backend-model="live.transcriptionStatus.value?.model ?? undefined"
           :backend-inference-ms="live.transcriptionStatus.value?.inferenceMs ?? undefined"
-          :audio-devices-supported="audioInput.supported"
-          :audio-devices="audioInput.devices.value"
-          :selected-device-id="audioInput.selectedDeviceId.value"
-          :audio-devices-loading="audioInput.loading.value"
-          :audio-device-error="audioInput.error.value"
-          :microphone-test-state="audioInput.testState.value"
-          :microphone-test-level="audioInput.testLevel.value"
           :disabled="live.ended.value"
           @start="startTranscription"
           @stop="transcription.stop"
-          @refresh-audio-devices="audioInput.refresh"
-          @select-audio-device="changeAudioInput"
-          @start-microphone-test="audioInput.startTest"
-          @stop-microphone-test="audioInput.stopTest"
         />
         <button
           v-if="!live.canManage.value && !live.ended.value"

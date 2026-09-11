@@ -28,3 +28,7 @@ openapi.json
 
 # variáveis de ambiente locais (.env.example é o template versionado)
 .env
+
+# Playwright/runtime local descartável
+.e2e-results/
+.e2e-runtime/

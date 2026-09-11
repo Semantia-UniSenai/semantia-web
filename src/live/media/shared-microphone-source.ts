@@ -9,6 +9,7 @@ export interface SharedMicrophoneSource {
   acquire(deviceId: string): Promise<MicrophoneLease>
   reset(deviceId: string): Promise<void>
   dispose(): void
+  onEnded?(listener: () => void): () => void
 }
 
 type GetUserMedia = (constraints: MediaStreamConstraints) => Promise<MediaStream>
@@ -20,11 +21,17 @@ export class BrowserSharedMicrophoneSource {
   private activeDeviceId: string | null = null
   private baseEndedListener: (() => void) | null = null
   private readonly clones = new Set<MediaStreamTrack>()
+  private readonly endedListeners = new Set<() => void>()
   private readonly getUserMedia: GetUserMedia
 
   constructor(getUserMedia?: GetUserMedia) {
     this.getUserMedia =
       getUserMedia ?? ((constraints) => navigator.mediaDevices.getUserMedia(constraints))
+  }
+
+  onEnded(listener: () => void): () => void {
+    this.endedListeners.add(listener)
+    return () => this.endedListeners.delete(listener)
   }
 
   async acquire(deviceId: string): Promise<MicrophoneLease> {
@@ -97,7 +104,9 @@ export class BrowserSharedMicrophoneSource {
     }
     this.baseTrack = audioTrack
     this.baseEndedListener = () => {
-      if (this.baseTrack === audioTrack) this.invalidate()
+      if (this.baseTrack !== audioTrack) return
+      this.invalidate()
+      for (const listener of this.endedListeners) listener()
     }
     audioTrack.addEventListener('ended', this.baseEndedListener, { once: true })
   }

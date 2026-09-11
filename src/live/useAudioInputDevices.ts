@@ -77,6 +77,7 @@ export function useAudioInputDevices() {
   const error = ref<AudioInputError | null>(null)
   const testState = ref<MicrophoneTestState>('idle')
   const testLevel = ref(0)
+  const testMonitorEnabled = ref(false)
 
   let testStream: MediaStream | null = null
   let testContext: AudioContext | null = null
@@ -140,11 +141,12 @@ export function useAudioInputDevices() {
     testStream = null
     testContext = null
     testLevel.value = 0
+    testMonitorEnabled.value = false
     testState.value = 'idle'
     if (context && context.state !== 'closed') await context.close()
   }
 
-  async function startTest() {
+  async function startTest(monitorLocally = false) {
     await stopTest()
     const generation = testGeneration
     if (!supported) {
@@ -183,12 +185,14 @@ export function useAudioInputDevices() {
       analyser.fftSize = 256
       analyser.smoothingTimeConstant = 0.75
       source.connect(analyser)
+      if (monitorLocally) analyser.connect(context.destination)
       if (context.state === 'suspended') await context.resume()
 
       testStream = pendingStream
       testContext = context
       testSource = source
       testAnalyser = analyser
+      testMonitorEnabled.value = monitorLocally
       permissionGranted.value = true
       testState.value = 'listening'
       const samples = new Uint8Array(analyser.fftSize)
@@ -233,11 +237,12 @@ export function useAudioInputDevices() {
       testState.value === 'requesting' ||
       testState.value === 'listening' ||
       testState.value === 'working'
+    const restartMonitor = testMonitorEnabled.value
     if (restartTest) await stopTest()
     selectedDeviceId.value = deviceId
     persistDeviceId(deviceId)
     error.value = null
-    if (restartTest) await startTest()
+    if (restartTest) await startTest(restartMonitor)
   }
 
   const handleDeviceChange = async () => {
@@ -261,6 +266,7 @@ export function useAudioInputDevices() {
     error: readonly(error),
     testState: readonly(testState),
     testLevel: readonly(testLevel),
+    testMonitorEnabled: readonly(testMonitorEnabled),
     refresh,
     selectDevice,
     startTest,

@@ -31,6 +31,30 @@ describe('ConferenceTrackElement', () => {
     expect(videoTrack.attach).toHaveBeenCalledWith(video.element)
   })
 
+  it('keeps decorative video inside the named participant tile out of the accessibility tree', () => {
+    const videoTrack = track()
+
+    const wrapper = mount(ConferenceTrackElement, {
+      props: { track: videoTrack },
+    })
+
+    expect(wrapper.get('video').attributes('aria-hidden')).toBe('true')
+  })
+
+  it('gives remote audio a stable accessible participant name', () => {
+    const audioTrack = track({
+      key: 'remote-1:microphone',
+      kind: 'audio',
+      source: 'microphone',
+    })
+
+    const wrapper = mount(ConferenceTrackElement, {
+      props: { track: audioTrack },
+    })
+
+    expect(wrapper.get('audio').attributes('aria-label')).toBe('Áudio de Bruno')
+  })
+
   it('detaches the exact element when it is unmounted', () => {
     const audioTrack = track({
       key: 'remote-1:microphone',
