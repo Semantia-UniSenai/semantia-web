@@ -313,6 +313,90 @@ describe('LiveRoomView accessible stage layout', () => {
     expect(document.activeElement).toBe(lastButton.element)
   })
 
+  it('lista de participantes tem role list e aria-live polite', async () => {
+    const wrapper = mountRoom()
+
+    const peopleTrigger = wrapper
+      .findAll('button[aria-controls="meeting-panel"]')
+      .find((b) => b.text().includes('Pessoas'))!
+    await peopleTrigger.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const list = wrapper.find('[role="list"][aria-live="polite"]')
+    expect(list.exists()).toBe(true)
+    expect(list.attributes('aria-label')).toContain('Participantes')
+  })
+
+  it('botão Remover abre dialog de confirmação e não remove direto', async () => {
+    liveMock.participants.value = [
+      { participantId: 'host-1', name: 'Cauê', role: 'HOST' },
+      { participantId: 'part-2', name: 'Lia', role: 'PARTICIPANT' },
+    ]
+    const wrapper = mountRoom()
+
+    const peopleTrigger = wrapper
+      .findAll('button[aria-controls="meeting-panel"]')
+      .find((b) => b.text().includes('Pessoas'))!
+    await peopleTrigger.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const removeBtn = wrapper.get('button[aria-label="Remover Lia da sala"]')
+    await removeBtn.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[role="dialog"][aria-modal="true"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Remover participante?')
+    expect(wrapper.text()).toContain('Lia')
+    expect(liveMock.removeParticipant).not.toHaveBeenCalled()
+  })
+
+  it('cancelar no dialog fecha sem remover', async () => {
+    liveMock.participants.value = [
+      { participantId: 'host-1', name: 'Cauê', role: 'HOST' },
+      { participantId: 'part-2', name: 'Lia', role: 'PARTICIPANT' },
+    ]
+    const wrapper = mountRoom()
+
+    const peopleTrigger = wrapper
+      .findAll('button[aria-controls="meeting-panel"]')
+      .find((b) => b.text().includes('Pessoas'))!
+    await peopleTrigger.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    await wrapper.get('button[aria-label="Remover Lia da sala"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+
+    await wrapper.get('[role="dialog"] button.ghost').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(liveMock.removeParticipant).not.toHaveBeenCalled()
+  })
+
+  it('confirmar no dialog chama removeParticipant e fecha', async () => {
+    liveMock.participants.value = [
+      { participantId: 'host-1', name: 'Cauê', role: 'HOST' },
+      { participantId: 'part-2', name: 'Lia', role: 'PARTICIPANT' },
+    ]
+    const wrapper = mountRoom()
+
+    const peopleTrigger = wrapper
+      .findAll('button[aria-controls="meeting-panel"]')
+      .find((b) => b.text().includes('Pessoas'))!
+    await peopleTrigger.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    await wrapper.get('button[aria-label="Remover Lia da sala"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    await wrapper.get('[role="dialog"] button.danger').trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(liveMock.removeParticipant).toHaveBeenCalledWith('part-2')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+  })
+
   it('mantém leitura e remove controles de mutação após o encerramento', () => {
     liveMock.session.value = { ...liveMock.session.value!, status: 'ENDED', endedAt: '2026-07-31T13:00:00.000Z' }
     const wrapper = mountRoom()

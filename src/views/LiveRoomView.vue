@@ -30,6 +30,12 @@ const isCompactPanel = ref(false)
 let lastPanelTrigger: MeetingPanel = 'chat'
 let panelMediaQuery: MediaQueryList | null = null
 
+const confirmRemoveId = ref<string | null>(null)
+const removingId = ref<string | null>(null)
+const confirmDialogRef = ref<HTMLElement | null>(null)
+const confirmCancelButton = ref<HTMLButtonElement | null>(null)
+let removeTriggerElement: HTMLButtonElement | null = null
+
 const audioInput = useAudioInputDevices()
 const transcription = useMeetingTranscription({
   deviceId: audioInput.selectedDeviceId,
@@ -178,6 +184,54 @@ function syncPanelMode() {
   isCompactPanel.value = panelMediaQuery?.matches ?? false
 }
 
+function participantName(participantId: string | null): string {
+  if (!participantId) return ''
+  return live.participants.value.find(p => p.participantId === participantId)?.name ?? ''
+}
+
+function openConfirmRemove(participantId: string, event: MouseEvent) {
+  removeTriggerElement = event.currentTarget as HTMLButtonElement
+  confirmRemoveId.value = participantId
+}
+
+function closeConfirmRemove() {
+  confirmRemoveId.value = null
+  void nextTick(() => removeTriggerElement?.focus())
+}
+
+async function doRemove() {
+  const id = confirmRemoveId.value
+  if (!id) return
+  confirmRemoveId.value = null
+  removingId.value = id
+  await live.removeParticipant(id)
+  removingId.value = null
+}
+
+function trapDialogFocus(event: KeyboardEvent) {
+  if (!confirmDialogRef.value) return
+  const focusable = Array.from(
+    confirmDialogRef.value.querySelectorAll<HTMLElement>('button:not([disabled])'),
+  )
+  if (focusable.length < 2) return
+  const first = focusable[0]!
+  const last = focusable[focusable.length - 1]!
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+watch(confirmRemoveId, async (id) => {
+  if (id) {
+    await nextTick()
+    confirmCancelButton.value?.focus()
+  }
+})
+
 function trapPanelFocus(event: KeyboardEvent) {
   if (!isCompactPanel.value || !panelElement.value) return
   const focusable = Array.from(
@@ -230,6 +284,32 @@ function trapPanelFocus(event: KeyboardEvent) {
       <button type="button" class="ghost" @click="live.disconnect(); $router.push('/')">Fechar</button>
     </div>
   </div>
+  <div
+    v-if="confirmRemoveId !== null"
+    class="confirm-dialog-backdrop"
+    role="presentation"
+    @click.self="closeConfirmRemove"
+    @keydown.esc.prevent="closeConfirmRemove"
+    @keydown.tab.prevent="trapDialogFocus"
+  >
+    <div
+      ref="confirmDialogRef"
+      class="confirm-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-remove-title"
+    >
+      <h3 id="confirm-remove-title" class="confirm-dialog__title">Remover participante?</h3>
+      <p class="confirm-dialog__body">
+        <strong>{{ participantName(confirmRemoveId) }}</strong> será desconectado da sala e não poderá retornar diretamente.
+      </p>
+      <div class="confirm-dialog__actions">
+        <button ref="confirmCancelButton" type="button" class="ghost" @click="closeConfirmRemove">Cancelar</button>
+        <button type="button" class="danger" @click="doRemove">Remover</button>
+      </div>
+    </div>
+  </div>
+
   <main class="room" :class="{ 'room--panel-open': panel }">
     <a class="skip-link" href="#captions-main">Ir para a legenda</a>
     <header class="topbar" :inert="isCompactPanel && !!panel">
@@ -338,8 +418,8 @@ function trapPanelFocus(event: KeyboardEvent) {
             @approve="live.approveAdmission"
             @reject="live.rejectAdmission"
           />
-          <div class="people">
-            <article v-for="participant in live.participants.value" :key="participant.participantId">
+          <div class="people" role="list" aria-label="Participantes na reunião" aria-live="polite">
+            <article v-for="participant in live.participants.value" :key="participant.participantId" role="listitem">
               <span class="avatar">{{ participant.name.charAt(0).toUpperCase() }}</span>
               <div><strong>{{ participant.participantId === live.currentParticipantId.value ? 'Você' : participant.name }}</strong><small>{{ participant.role === 'HOST' ? 'Anfitrião' : participant.role === 'MODERATOR' ? 'Moderador' : participant.role === 'GUEST' ? 'Convidado' : 'Participante' }}</small></div>
               <button v-if="live.canManage.value && live.raisedHands.value.some((hand) => hand.participantId === participant.participantId)" type="button" @click="live.lowerParticipantHand(participant.participantId)">✋ Baixar</button>
@@ -348,9 +428,12 @@ function trapPanelFocus(event: KeyboardEvent) {
                 v-if="live.canManage.value && participant.participantId !== live.currentParticipantId.value && participant.role !== 'HOST'"
                 type="button"
                 class="remove-btn"
+                :class="{ 'remove-btn--loading': removingId === participant.participantId }"
+                :disabled="removingId === participant.participantId"
                 :aria-label="`Remover ${participant.name} da sala`"
-                @click="live.removeParticipant(participant.participantId)"
-              >Remover</button>
+                :aria-busy="removingId === participant.participantId ? 'true' : undefined"
+                @click="openConfirmRemove(participant.participantId, $event)"
+              >{{ removingId === participant.participantId ? '…' : 'Remover' }}</button>
             </article>
           </div>
           </template>
@@ -655,6 +738,48 @@ function trapPanelFocus(event: KeyboardEvent) {
 .remove-btn:hover {
   background: rgba(231, 88, 110, 0.14);
   border-color: rgba(231, 88, 110, 0.5);
+}
+.remove-btn--loading {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.confirm-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(6px);
+}
+.confirm-dialog {
+  width: min(400px, 100%);
+  padding: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  background: #141c2e;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  color: var(--meeting-text);
+  animation: meeting-sheet-in 0.18s ease-out;
+}
+.confirm-dialog__title {
+  margin: 0 0 10px;
+  font: 700 18px var(--display);
+}
+.confirm-dialog__body {
+  margin: 0 0 22px;
+  font-size: 13px;
+  color: var(--meeting-muted);
+  line-height: 1.5;
+}
+.confirm-dialog__body strong {
+  color: var(--meeting-text);
+}
+.confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 .control-bar {
   position: relative;
@@ -966,6 +1091,7 @@ function trapPanelFocus(event: KeyboardEvent) {
 
 @media (prefers-reduced-motion: reduce) {
   .side,
+  .confirm-dialog,
   .status.reconnecting i {
     animation: none;
   }
