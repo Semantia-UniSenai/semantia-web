@@ -104,10 +104,11 @@ function createLiveMock() {
     lowerHand: vi.fn(),
     lowerParticipantHand: vi.fn(),
     endSession: vi.fn(),
-    admissionStatus: ref<'none' | 'waiting' | 'denied'>('none'),
+    admissionStatus: ref<'none' | 'waiting' | 'denied' | 'removed'>('none'),
     admissionQueue: ref<AdmissionEntry[]>([]),
     approveAdmission: vi.fn().mockResolvedValue({ ok: true }),
     rejectAdmission: vi.fn().mockResolvedValue({ ok: true }),
+    removeParticipant: vi.fn().mockResolvedValue({ ok: true }),
   }
 }
 

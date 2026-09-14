@@ -221,6 +221,15 @@ function trapPanelFocus(event: KeyboardEvent) {
       <button type="button" class="ghost" @click="live.disconnect(); $router.push('/')">Fechar</button>
     </div>
   </div>
+
+  <div v-if="live.admissionStatus.value === 'removed'" class="admission-overlay admission-overlay--denied" role="alert">
+    <div class="admission-overlay__card">
+      <svg aria-hidden="true" viewBox="0 0 24 24" class="admission-overlay__icon"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+      <h2>Você foi removido da sala</h2>
+      <p>O anfitrião encerrou sua participação nesta reunião.</p>
+      <button type="button" class="ghost" @click="live.disconnect(); $router.push('/')">Fechar</button>
+    </div>
+  </div>
   <main class="room" :class="{ 'room--panel-open': panel }">
     <a class="skip-link" href="#captions-main">Ir para a legenda</a>
     <header class="topbar" :inert="isCompactPanel && !!panel">
@@ -335,6 +344,13 @@ function trapPanelFocus(event: KeyboardEvent) {
               <div><strong>{{ participant.participantId === live.currentParticipantId.value ? 'Você' : participant.name }}</strong><small>{{ participant.role === 'HOST' ? 'Anfitrião' : participant.role === 'MODERATOR' ? 'Moderador' : participant.role === 'GUEST' ? 'Convidado' : 'Participante' }}</small></div>
               <button v-if="live.canManage.value && live.raisedHands.value.some((hand) => hand.participantId === participant.participantId)" type="button" @click="live.lowerParticipantHand(participant.participantId)">✋ Baixar</button>
               <span v-else-if="live.raisedHands.value.some((hand) => hand.participantId === participant.participantId)" class="raised">✋</span>
+              <button
+                v-if="live.canManage.value && participant.participantId !== live.currentParticipantId.value && participant.role !== 'HOST'"
+                type="button"
+                class="remove-btn"
+                :aria-label="`Remover ${participant.name} da sala`"
+                @click="live.removeParticipant(participant.participantId)"
+              >Remover</button>
             </article>
           </div>
           </template>
@@ -625,6 +641,20 @@ function trapPanelFocus(event: KeyboardEvent) {
   height: 38px;
   color: #10232f;
   background: linear-gradient(135deg, #7bd5d8, #90aeea);
+}
+.remove-btn {
+  margin-left: auto;
+  padding: 5px 10px;
+  border: 1px solid rgba(231, 88, 110, 0.25);
+  border-radius: 8px;
+  background: rgba(231, 88, 110, 0.06);
+  color: #c0394f;
+  font: 700 11px var(--display, inherit);
+  cursor: pointer;
+}
+.remove-btn:hover {
+  background: rgba(231, 88, 110, 0.14);
+  border-color: rgba(231, 88, 110, 0.5);
 }
 .control-bar {
   position: relative;
