@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type {
   AckError,
+  AdmissionEntry,
   ChatMessage,
   LiveSessionDetails,
   Participant,
@@ -63,6 +64,7 @@ function createLiveMock() {
     roomId: 'room-1',
     joinToken: 'invite-token',
     status: 'LIVE',
+    requiresApproval: false,
     audienceContext: null,
     createdAt: '2026-07-31T12:00:00.000Z',
     startedAt: '2026-07-31T12:00:00.000Z',
@@ -102,6 +104,10 @@ function createLiveMock() {
     lowerHand: vi.fn(),
     lowerParticipantHand: vi.fn(),
     endSession: vi.fn(),
+    admissionStatus: ref<'none' | 'waiting' | 'denied'>('none'),
+    admissionQueue: ref<AdmissionEntry[]>([]),
+    approveAdmission: vi.fn().mockResolvedValue({ ok: true }),
+    rejectAdmission: vi.fn().mockResolvedValue({ ok: true }),
   }
 }
 
