@@ -66,6 +66,7 @@ const session = {
   roomId: 'room-1',
   joinToken: 'invite-1',
   status: 'LIVE' as const,
+  requiresApproval: false,
   audienceContext: null,
   createdAt: '2026-07-30T10:00:00.000Z',
   startedAt: '2026-07-30T10:01:00.000Z',
@@ -101,6 +102,7 @@ function setup() {
 }
 
 beforeEach(() => {
+  localStorage.clear()
   sessionStorage.clear()
 })
 
@@ -362,5 +364,89 @@ describe('useLiveSession generic room contract', () => {
     socket.fire('session:ended', { endedAt: '2026-07-30T11:00:00.000Z' })
     expect(live.ended.value).toBe(true)
     expect(live.session.value?.endedAt).toBe('2026-07-30T11:00:00.000Z')
+  })
+})
+
+describe('useLiveSession media credentials', () => {
+  const credentials = {
+    serverUrl: 'wss://media.example.test',
+    participantToken: 'ephemeral-participant-token',
+    expiresInSeconds: 600,
+  }
+
+  it('emits media credentials only after authenticated session state', async () => {
+    const { socket, live } = setup()
+    live.connect('session-1')
+    socket.connected = true
+
+    await expect((live as any).requestMediaCredentials()).resolves.toEqual({
+      ok: false,
+      error: { code: 'NOT_JOINED', message: 'Entre na sala antes de conectar a mídia' },
+    })
+    expect(socket.last('media:credentials')).toBeUndefined()
+
+    socket.fire('session:state', state)
+    const pending = (live as any).requestMediaCredentials()
+    expect(socket.last('media:credentials')).toBeDefined()
+    socket.ack('media:credentials', { ok: true, ...credentials })
+
+    await expect(pending).resolves.toEqual({ ok: true, ...credentials })
+  })
+
+  it('propagates media unavailable without disconnecting the text room', async () => {
+    const { socket, live } = setup()
+    live.connect('session-1')
+    socket.connected = true
+    socket.fire('session:state', state)
+    const error = {
+      code: 'MEDIA_UNAVAILABLE',
+      message: 'Áudio e vídeo estão indisponíveis',
+    }
+
+    const pending = (live as any).requestMediaCredentials()
+    socket.ack('media:credentials', { ok: false, error })
+
+    await expect(pending).resolves.toEqual({ ok: false, error })
+    expect(live.actionError.value).toEqual(error)
+    expect(socket.disconnect).not.toHaveBeenCalled()
+  })
+
+  it('cancels a pending credential ACK when the socket disconnects', async () => {
+    const { socket, live } = setup()
+    live.connect('session-1')
+    socket.connected = true
+    socket.fire('session:state', state)
+
+    const pending = (live as any).requestMediaCredentials()
+    socket.fire('disconnect')
+
+    await expect(pending).resolves.toEqual({
+      ok: false,
+      error: { code: 'OFFLINE', message: 'Socket desconectado' },
+    })
+  })
+
+  it('does not retain a participant token in refs or browser storage', async () => {
+    const { socket, live } = setup()
+    live.connect('session-1')
+    socket.connected = true
+    socket.fire('session:state', state)
+
+    const pending = (live as any).requestMediaCredentials()
+    socket.ack('media:credentials', { ok: true, ...credentials })
+    await pending
+
+    const exposedValues = Object.values(live).flatMap((value) =>
+      value && typeof value === 'object' && 'value' in value
+        ? [(value as { value: unknown }).value]
+        : [],
+    )
+    const storedValues = [localStorage, sessionStorage].flatMap((storage) =>
+      Array.from({ length: storage.length }, (_, index) =>
+        storage.getItem(storage.key(index) ?? ''),
+      ),
+    )
+    expect(JSON.stringify(exposedValues)).not.toContain(credentials.participantToken)
+    expect(JSON.stringify(storedValues)).not.toContain(credentials.participantToken)
   })
 })

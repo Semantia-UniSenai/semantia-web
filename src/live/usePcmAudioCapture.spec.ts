@@ -52,6 +52,18 @@ class FakeAudioContext {
   resume = contextResume
 }
 
+class FakeMediaStream {
+  readonly tracks: MediaStreamTrack[]
+
+  constructor(tracks: MediaStreamTrack[]) {
+    this.tracks = tracks
+  }
+
+  getTracks() {
+    return this.tracks
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   workletMessageHandler = null
@@ -61,6 +73,7 @@ beforeEach(() => {
   getUserMedia.mockResolvedValue({ getTracks: () => [{ stop: stopTrack }] })
   vi.stubGlobal('navigator', { mediaDevices: { getUserMedia } })
   vi.stubGlobal('AudioContext', FakeAudioContext)
+  vi.stubGlobal('MediaStream', FakeMediaStream)
 })
 
 afterEach(() => {
@@ -69,6 +82,59 @@ afterEach(() => {
 })
 
 describe('usePcmAudioCapture', () => {
+  it('releases a pending lease when consumer stream construction fails', async () => {
+    const release = vi.fn()
+    const microphoneSource = {
+      acquire: vi.fn().mockResolvedValue({
+        track: { stop: vi.fn() } as unknown as MediaStreamTrack,
+        release,
+      }),
+      reset: vi.fn(),
+      dispose: vi.fn(),
+    }
+    vi.stubGlobal(
+      'MediaStream',
+      class {
+        constructor() {
+          throw new DOMException('stream failed', 'NotSupportedError')
+        }
+      },
+    )
+    const capture = usePcmAudioCapture({
+      microphoneSource,
+      onAudioChunk: vi.fn(),
+    })
+
+    await expect(capture.start()).resolves.toBe(false)
+
+    expect(release).toHaveBeenCalledTimes(1)
+    expect(capture.error.value).toBe('unavailable')
+  })
+
+  it('uses a shared microphone lease without opening another physical stream', async () => {
+    vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode)
+    const leasedTrack = { stop: vi.fn() } as unknown as MediaStreamTrack
+    const release = vi.fn()
+    const microphoneSource = {
+      acquire: vi.fn().mockResolvedValue({ track: leasedTrack, release }),
+      reset: vi.fn(),
+      dispose: vi.fn(),
+    }
+    const capture = usePcmAudioCapture({
+      microphoneSource,
+      onAudioChunk: vi.fn(),
+    })
+
+    await expect(capture.start('usb-headset')).resolves.toBe(true)
+    capture.stop()
+
+    expect(microphoneSource.acquire).toHaveBeenCalledWith('usb-headset')
+    expect(getUserMedia).not.toHaveBeenCalled()
+    expect(source.connect).toHaveBeenCalled()
+    expect(release).toHaveBeenCalledTimes(1)
+    expect(leasedTrack.stop).not.toHaveBeenCalled()
+  })
+
   it('captures the selected microphone as PCM frames without recognition', async () => {
     vi.stubGlobal('AudioWorkletNode', FakeAudioWorkletNode)
     const onAudioChunk = vi.fn()

@@ -47,6 +47,12 @@ export interface AdmissionEntry {
   requestedAt: string
 }
 
+export interface MediaCredentials {
+  serverUrl: string
+  participantToken: string
+  expiresInSeconds: number
+}
+
 export interface LiveSessionDetails {
   id: string
   title: string

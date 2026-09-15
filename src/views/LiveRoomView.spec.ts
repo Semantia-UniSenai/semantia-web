@@ -14,12 +14,18 @@ import type {
 
 let liveMock: ReturnType<typeof createLiveMock>
 let audioMock: ReturnType<typeof createAudioMock>
+let videoMock: ReturnType<typeof createVideoMock>
 let transcriptionMock: ReturnType<typeof createTranscriptionMock>
+let conferenceMock!: ReturnType<typeof createConferenceMock>
+let sharedMicrophoneSourceMock!: ReturnType<typeof createSharedMicrophoneSourceMock>
+let conferenceOptions: Record<string, unknown> | null
 let transcriptionOptions: {
   onAudioSegment?: (segment: unknown) => Promise<unknown>
+  microphoneSource?: unknown
   onPartial?: unknown
   onFinal?: unknown
 } | null
+let audioInputOptions: Record<string, unknown> | undefined
 let compactViewport = false
 
 const routerMocks = vi.hoisted(() => ({
@@ -29,6 +35,7 @@ const routerMocks = vi.hoisted(() => ({
     query: {},
   },
 }))
+const switchSharedMicrophoneDeviceMock = vi.hoisted(() => vi.fn())
 
 vi.mock('vue-router', () => ({
   RouterLink: {
@@ -44,7 +51,14 @@ vi.mock('../live/useLiveSession', () => ({
 }))
 
 vi.mock('../live/useAudioInputDevices', () => ({
-  useAudioInputDevices: () => audioMock,
+  useAudioInputDevices: (options?: Record<string, unknown>) => {
+    audioInputOptions = options
+    return audioMock
+  },
+}))
+
+vi.mock('../live/useVideoInputDevices', () => ({
+  useVideoInputDevices: () => videoMock,
 }))
 
 vi.mock('../live/useMeetingTranscription', () => ({
@@ -52,6 +66,25 @@ vi.mock('../live/useMeetingTranscription', () => ({
     transcriptionOptions = options
     return transcriptionMock
   },
+}))
+
+vi.mock('../live/useConferenceMedia', () => ({
+  useConferenceMedia: (options: Record<string, unknown>) => {
+    conferenceOptions = options
+    return conferenceMock
+  },
+}))
+
+vi.mock('../live/media/shared-microphone-source', () => ({
+  BrowserSharedMicrophoneSource: class {
+    constructor() {
+      return sharedMicrophoneSourceMock
+    }
+  },
+}))
+
+vi.mock('../live/switch-shared-microphone-device', () => ({
+  switchSharedMicrophoneDevice: switchSharedMicrophoneDeviceMock,
 }))
 
 import LiveRoomView from './LiveRoomView.vue'
@@ -63,6 +96,7 @@ function createLiveMock() {
     roomId: 'room-1',
     joinToken: 'invite-token',
     status: 'LIVE',
+    requiresApproval: false,
     audienceContext: null,
     createdAt: '2026-07-31T12:00:00.000Z',
     startedAt: '2026-07-31T12:00:00.000Z',
@@ -73,9 +107,10 @@ function createLiveMock() {
   })
   const role = ref<ParticipantRole | null>('HOST')
   const ended = computed(() => session.value?.status === 'ENDED')
+  const status = ref<'offline' | 'connecting' | 'connected'>('connected')
 
   return {
-    status: ref<'offline' | 'connecting' | 'connected'>('connected'),
+    status,
     joinError: ref<AckError | null>(null),
     actionError: ref<AckError | null>(null),
     session,
@@ -89,18 +124,30 @@ function createLiveMock() {
     transcript: ref<TranscriptEntry[]>([]),
     pendingAudioCount: ref(0),
     transcriptionStatus: ref(null),
+    admissionQueue: ref([]),
+    admissionStatus: ref<'none' | 'waiting' | 'denied'>('none'),
     ended,
     canPublishTranscript: computed(() => role.value === 'HOST' && !ended.value),
-    joined: computed(() => true),
+    joined: computed(() => !!session.value && status.value === 'connected'),
     currentParticipantId: ref<string | null>('host-1'),
     connect: vi.fn(),
     disconnect: vi.fn(),
     publishAudioSegment: vi.fn().mockResolvedValue({ ok: true }),
+    requestMediaCredentials: vi.fn().mockResolvedValue({
+      ok: true,
+      serverUrl: 'wss://media.example.test',
+      participantToken: 'ephemeral-token',
+      expiresInSeconds: 600,
+    }),
     waitForAudioDrain: vi.fn().mockResolvedValue(true),
     sendChat: vi.fn(),
     raiseHand: vi.fn(),
     lowerHand: vi.fn(),
     lowerParticipantHand: vi.fn(),
+    approveAdmission: vi.fn(),
+    rejectAdmission: vi.fn(),
+    updateAudienceContext: vi.fn(),
+    updateAdmissionPolicy: vi.fn(),
     endSession: vi.fn(),
   }
 }
@@ -114,6 +161,26 @@ function createAudioMock() {
     error: ref(null),
     testState: ref('idle'),
     testLevel: ref(0),
+    testMonitorEnabled: ref(false),
+    refresh: vi.fn(),
+    selectDevice: vi.fn(),
+    startTest: vi.fn(),
+    stopTest: vi.fn(),
+  }
+}
+
+function createVideoMock() {
+  return {
+    supported: true,
+    devices: ref([
+      { deviceId: 'default', groupId: 'g1', label: 'Câmera integrada' },
+      { deviceId: 'usb-camera', groupId: 'g2', label: 'Webcam USB' },
+    ]),
+    selectedDeviceId: ref('default'),
+    loading: ref(false),
+    error: ref(null),
+    testState: ref('idle'),
+    testStream: ref<MediaStream | null>(null),
     refresh: vi.fn(),
     selectDevice: vi.fn(),
     startTest: vi.fn(),
@@ -135,6 +202,34 @@ function createTranscriptionMock() {
   }
 }
 
+function createConferenceMock() {
+  return {
+    mediaStatus: ref('connected'),
+    mediaError: ref(null),
+    microphoneEnabled: ref(false),
+    cameraEnabled: ref(false),
+    microphonePending: ref(false),
+    cameraPending: ref(false),
+    audioPlaybackBlocked: ref(false),
+    participants: ref([]),
+    tracks: ref([]),
+    toggleMicrophone: vi.fn().mockResolvedValue(undefined),
+    toggleCamera: vi.fn().mockResolvedValue(undefined),
+    switchDevice: vi.fn().mockResolvedValue(undefined),
+    retry: vi.fn().mockResolvedValue(undefined),
+    startAudio: vi.fn().mockResolvedValue(undefined),
+    disconnect: vi.fn().mockResolvedValue(undefined),
+  }
+}
+
+function createSharedMicrophoneSourceMock() {
+  return {
+    acquire: vi.fn(),
+    reset: vi.fn(),
+    dispose: vi.fn(),
+  }
+}
+
 function mountRoom() {
   return mount(LiveRoomView, {
     attachTo: document.body,
@@ -149,7 +244,35 @@ function mountRoom() {
           template: '<div data-testid="chat-panel"><input data-testid="panel-input"><button data-testid="panel-action">Enviar</button></div>',
         },
         MicControl: {
-          template: '<div data-testid="mic-control">Microfone</div>',
+          emits: ['start', 'stop'],
+          template: '<div data-testid="mic-control">Transcrição</div>',
+        },
+        ConferenceControls: {
+          props: [
+            'microphonePending',
+            'cameraPending',
+            'selectedVideoDeviceId',
+            'selectedAudioDeviceId',
+          ],
+          emits: [
+            'toggle-microphone',
+            'toggle-camera',
+            'retry',
+            'select-video-device',
+            'select-audio-device',
+            'start-camera-test',
+            'stop-camera-test',
+            'start-microphone-test',
+            'stop-microphone-test',
+          ],
+          template:
+            '<div data-testid="conference-controls" :data-microphone-pending="microphonePending" :data-camera-pending="cameraPending" :data-selected-video-device="selectedVideoDeviceId" :data-selected-audio-device="selectedAudioDeviceId"><button data-testid="call-microphone" @click="$emit(\'toggle-microphone\')">Áudio</button><button data-testid="call-camera" @click="$emit(\'toggle-camera\')">Vídeo</button><button data-testid="select-video-input" @click="$emit(\'select-video-device\', \'usb-camera\')">Trocar câmera</button><button data-testid="select-audio-input" @click="$emit(\'select-audio-device\', \'microphone-2\')">Trocar microfone</button><button data-testid="start-camera-test" @click="$emit(\'start-camera-test\')">Testar câmera</button><button data-testid="stop-camera-test" @click="$emit(\'stop-camera-test\')">Parar câmera</button><button data-testid="start-microphone-test" @click="$emit(\'start-microphone-test\')">Testar microfone</button><button data-testid="stop-microphone-test" @click="$emit(\'stop-microphone-test\')">Parar microfone</button><button data-testid="call-retry" @click="$emit(\'retry\')">Tentar</button></div>',
+        },
+        ConferenceMediaStage: {
+          props: ['raisedParticipantIds'],
+          emits: ['resume-audio'],
+          template:
+            '<div data-testid="conference-media" :data-raised-participants="raisedParticipantIds?.join(\',\')"><button data-testid="resume-call-audio" @click="$emit(\'resume-audio\')">Ativar áudio</button></div>',
         },
       },
     },
@@ -160,10 +283,17 @@ beforeEach(() => {
   document.body.innerHTML = ''
   liveMock = createLiveMock()
   audioMock = createAudioMock()
+  videoMock = createVideoMock()
   transcriptionMock = createTranscriptionMock()
+  conferenceMock = createConferenceMock()
+  sharedMicrophoneSourceMock = createSharedMicrophoneSourceMock()
+  conferenceOptions = null
   transcriptionOptions = null
+  audioInputOptions = undefined
   compactViewport = false
   routerMocks.push.mockReset()
+  switchSharedMicrophoneDeviceMock.mockReset()
+  switchSharedMicrophoneDeviceMock.mockResolvedValue(undefined)
 
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
@@ -181,6 +311,165 @@ beforeEach(() => {
 })
 
 describe('LiveRoomView accessible stage layout', () => {
+  it('forwards raised hands to the participant video tiles', () => {
+    liveMock.raisedHands.value = [
+      { participantId: 'host-1', name: 'Cauê', at: '2026-09-10T20:00:00.000Z' },
+    ]
+
+    const wrapper = mountRoom()
+
+    expect(wrapper.get('[data-testid="conference-media"]').attributes('data-raised-participants')).toBe('host-1')
+  })
+
+  it('pauses call publication before starting local audible microphone and camera tests', async () => {
+    conferenceMock.microphoneEnabled.value = true
+    conferenceMock.cameraEnabled.value = true
+    const wrapper = mountRoom()
+
+    await wrapper.get('[data-testid="start-microphone-test"]').trigger('click')
+    expect(conferenceMock.toggleMicrophone).toHaveBeenCalledWith('default')
+    expect(audioMock.startTest).toHaveBeenCalledWith(true)
+
+    await wrapper.get('[data-testid="start-camera-test"]').trigger('click')
+    expect(conferenceMock.toggleCamera).toHaveBeenCalledWith('default')
+    expect(videoMock.startTest).toHaveBeenCalledTimes(1)
+  })
+
+  it('restores call media after each local device test stops', async () => {
+    conferenceMock.microphoneEnabled.value = true
+    conferenceMock.cameraEnabled.value = true
+    conferenceMock.toggleMicrophone.mockImplementation(async () => {
+      conferenceMock.microphoneEnabled.value = !conferenceMock.microphoneEnabled.value
+    })
+    conferenceMock.toggleCamera.mockImplementation(async () => {
+      conferenceMock.cameraEnabled.value = !conferenceMock.cameraEnabled.value
+    })
+    const wrapper = mountRoom()
+
+    await wrapper.get('[data-testid="start-microphone-test"]').trigger('click')
+    await wrapper.get('[data-testid="stop-microphone-test"]').trigger('click')
+    expect(conferenceMock.microphoneEnabled.value).toBe(true)
+
+    await wrapper.get('[data-testid="start-camera-test"]').trigger('click')
+    await wrapper.get('[data-testid="stop-camera-test"]').trigger('click')
+    expect(conferenceMock.cameraEnabled.value).toBe(true)
+  })
+
+  it('restores call media when a local device test cannot start', async () => {
+    conferenceMock.microphoneEnabled.value = true
+    conferenceMock.cameraEnabled.value = true
+    conferenceMock.toggleMicrophone.mockImplementation(async () => {
+      conferenceMock.microphoneEnabled.value = !conferenceMock.microphoneEnabled.value
+    })
+    conferenceMock.toggleCamera.mockImplementation(async () => {
+      conferenceMock.cameraEnabled.value = !conferenceMock.cameraEnabled.value
+    })
+    audioMock.startTest.mockImplementation(async () => {
+      audioMock.testState.value = 'error'
+    })
+    videoMock.startTest.mockImplementation(async () => {
+      videoMock.testState.value = 'error'
+    })
+    const wrapper = mountRoom()
+
+    await wrapper.get('[data-testid="start-microphone-test"]').trigger('click')
+    await wrapper.get('[data-testid="start-camera-test"]').trigger('click')
+
+    expect(conferenceMock.microphoneEnabled.value).toBe(true)
+    expect(conferenceMock.cameraEnabled.value).toBe(true)
+  })
+
+  it('stops every local preview when the canonical meeting ends', async () => {
+    const wrapper = mountRoom()
+
+    liveMock.session.value = {
+      ...liveMock.session.value!,
+      status: 'ENDED',
+      endedAt: '2026-09-14T12:00:00.000Z',
+    }
+    await wrapper.vm.$nextTick()
+
+    expect(audioMock.stopTest).toHaveBeenCalled()
+    expect(videoMock.stopTest).toHaveBeenCalled()
+    expect(transcriptionMock.stop).toHaveBeenCalledWith({ flush: false })
+  })
+
+  it('switches an active camera to the selected input without reconnecting media', async () => {
+    conferenceMock.cameraEnabled.value = true
+    const wrapper = mountRoom()
+
+    await wrapper.get('[data-testid="select-video-input"]').trigger('click')
+
+    expect(videoMock.selectDevice).toHaveBeenCalledWith('usb-camera')
+    expect(conferenceMock.switchDevice).toHaveBeenCalledWith('videoinput', 'usb-camera')
+    expect(conferenceMock.retry).not.toHaveBeenCalled()
+  })
+
+  it('forwards pending media operations to prevent repeated permission actions', async () => {
+    conferenceMock.microphonePending.value = true
+    conferenceMock.cameraPending.value = true
+    const wrapper = mountRoom()
+
+    expect(wrapper.get('[data-testid="conference-controls"]').attributes()).toMatchObject({
+      'data-microphone-pending': 'true',
+      'data-camera-pending': 'true',
+    })
+  })
+
+  it('keeps call controls available to a guest without transcription permission', async () => {
+    liveMock.role.value = 'GUEST'
+    liveMock.canManage.value = false
+    const wrapper = mountRoom()
+
+    expect(wrapper.find('[data-testid="mic-control"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="call-microphone"]').trigger('click')
+    await wrapper.get('[data-testid="call-camera"]').trigger('click')
+    await wrapper.get('[data-testid="resume-call-audio"]').trigger('click')
+    await wrapper.get('[data-testid="call-retry"]').trigger('click')
+
+    expect(audioMock.stopTest).toHaveBeenCalledTimes(1)
+    expect(conferenceMock.toggleMicrophone).toHaveBeenCalledWith('default')
+    expect(conferenceMock.toggleCamera).toHaveBeenCalledTimes(1)
+    expect(conferenceMock.startAudio).toHaveBeenCalledTimes(1)
+    expect(conferenceMock.retry).toHaveBeenCalledTimes(1)
+  })
+
+  it('disposes the physical microphone source when leaving the view', () => {
+    const wrapper = mountRoom()
+
+    wrapper.unmount()
+
+    expect(sharedMicrophoneSourceMock.dispose).toHaveBeenCalledTimes(1)
+    expect(audioMock.stopTest).toHaveBeenCalled()
+    expect(videoMock.stopTest).toHaveBeenCalled()
+  })
+
+  it('routes input selection through the shared microphone transaction', async () => {
+    const wrapper = mountRoom()
+
+    expect(wrapper.get('[data-testid="mic-control"]').find('[data-testid="select-audio-input"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="select-audio-input"]').trigger('click')
+
+    expect(switchSharedMicrophoneDeviceMock).toHaveBeenCalledWith({
+      deviceId: 'microphone-2',
+      previousDeviceId: 'default',
+      microphoneSource: sharedMicrophoneSourceMock,
+      conference: conferenceMock,
+      transcription: transcriptionMock,
+      stopTest: expect.any(Function),
+      selectDevice: audioMock.selectDevice,
+    })
+    expect(transcriptionOptions).not.toHaveProperty('deviceId')
+  })
+
+  it('shares one physical microphone source between call and transcription', () => {
+    mountRoom()
+
+    expect(conferenceOptions?.microphoneSource).toBe(sharedMicrophoneSourceMock)
+    expect(transcriptionOptions?.microphoneSource).toBe(sharedMicrophoneSourceMock)
+    expect(audioInputOptions?.microphoneSource).toBe(sharedMicrophoneSourceMock)
+  })
+
   it('encaminha somente segmentos PCM ao backend, sem callbacks textuais no cliente', async () => {
     mountRoom()
     expect(transcriptionOptions).not.toHaveProperty('onPartial')
@@ -236,7 +525,7 @@ describe('LiveRoomView accessible stage layout', () => {
     expect(document.activeElement).toBe(chatTrigger.element)
   })
 
-  it('mantém ações do participante na barra sem expor áudio ou administração', () => {
+  it('mantém chamada e ações do participante sem expor transcrição ou administração', () => {
     liveMock.role.value = 'GUEST'
     liveMock.canManage.value = false
     liveMock.currentParticipantId.value = 'guest-1'
@@ -250,6 +539,7 @@ describe('LiveRoomView accessible stage layout', () => {
     const controls = wrapper.get('nav[aria-label="Controles da reunião"]')
 
     expect(controls.text()).toContain('Levantar mão')
+    expect(wrapper.find('[data-testid="conference-controls"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="mic-control"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Encerrar reunião')
     expect(wrapper.text()).not.toContain('Convidar')
@@ -282,6 +572,8 @@ describe('LiveRoomView accessible stage layout', () => {
     )
     expect(wrapper.get('[data-testid="meeting-status"]').text()).toContain('Reconectando')
     expect(wrapper.get('#captions-main')).toBeTruthy()
+    expect(wrapper.find('[data-testid="conference-controls"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="conference-media"]').exists()).toBe(true)
   })
 
   it('contém o foco dentro do sheet mobile enquanto ele está aberto', async () => {
@@ -312,6 +604,7 @@ describe('LiveRoomView accessible stage layout', () => {
 
     expect(wrapper.get('[data-testid="caption-stage"]').attributes('data-caption-state')).toBe('ended')
     expect(wrapper.find('[data-testid="mic-control"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="conference-controls"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Reunião encerrada')
     expect(wrapper.text()).not.toContain('Convidar')
     expect(wrapper.text()).not.toContain('Levantar mão')

@@ -6,16 +6,30 @@ import AdmissionQueue from '../components/live/AdmissionQueue.vue'
 import AudienceContextForm from '../components/live/AudienceContextForm.vue'
 import CaptionStage from '../components/live/CaptionStage.vue'
 import ChatPanel from '../components/live/ChatPanel.vue'
+import ConferenceControls from '../components/live/ConferenceControls.vue'
+import ConferenceMediaStage from '../components/live/ConferenceMediaStage.vue'
 import MicControl from '../components/live/MicControl.vue'
 import { useAudioInputDevices } from '../live/useAudioInputDevices'
+import { useVideoInputDevices } from '../live/useVideoInputDevices'
+import { useConferenceMedia } from '../live/useConferenceMedia'
 import { useLiveSession } from '../live/useLiveSession'
 import { useMeetingTranscription } from '../live/useMeetingTranscription'
+import { BrowserSharedMicrophoneSource } from '../live/media/shared-microphone-source'
+import { switchSharedMicrophoneDevice } from '../live/switch-shared-microphone-device'
 
 const route = useRoute()
 const router = useRouter()
 const sessionId = computed(() => String(route.params.sessionId))
 const inviteToken = computed(() => typeof route.query.token === 'string' ? route.query.token : undefined)
 const live = useLiveSession()
+const microphoneSource = new BrowserSharedMicrophoneSource()
+const conference = useConferenceMedia({
+  joined: live.joined,
+  ended: live.ended,
+  textConnectionStatus: live.status,
+  requestMediaCredentials: live.requestMediaCredentials,
+  microphoneSource,
+})
 const copied = ref(false)
 const confirmingEnd = ref(false)
 const showContextForm = ref(false)
@@ -29,10 +43,13 @@ const participantsTrigger = ref<HTMLButtonElement | null>(null)
 const isCompactPanel = ref(false)
 let lastPanelTrigger: MeetingPanel = 'chat'
 let panelMediaQuery: MediaQueryList | null = null
+let restoreConferenceMicrophoneAfterTest = false
+let restoreConferenceCameraAfterTest = false
 
-const audioInput = useAudioInputDevices()
+const audioInput = useAudioInputDevices({ microphoneSource })
+const videoInput = useVideoInputDevices()
 const transcription = useMeetingTranscription({
-  deviceId: audioInput.selectedDeviceId,
+  microphoneSource,
   onAudioSegment: (segment) => live.publishAudioSegment(segment),
 })
 
@@ -46,6 +63,9 @@ const asrQualityStatus = computed<'idle' | 'ready' | 'processing' | 'error'>(() 
 
 const backTo = computed(() => '/app/salas')
 const myHand = computed(() => live.raisedHands.value.some((hand) => hand.participantId === live.currentParticipantId.value))
+const raisedParticipantIds = computed(() =>
+  live.raisedHands.value.map((hand) => hand.participantId),
+)
 const captionState = computed<'available' | 'paused' | 'preparing' | 'listening' | 'reconnecting' | 'ended'>(() => {
   if (live.ended.value) return 'ended'
   if (live.status.value !== 'connected') return 'reconnecting'
@@ -62,15 +82,26 @@ const meetingStatusLabel = computed(() => {
 onMounted(() => {
   live.connect(sessionId.value, inviteToken.value)
   void audioInput.refresh(false)
+  void videoInput.refresh(false)
   panelMediaQuery = window.matchMedia('(max-width: 1023px)')
   syncPanelMode()
   panelMediaQuery.addEventListener('change', syncPanelMode)
 })
-onBeforeUnmount(() => panelMediaQuery?.removeEventListener('change', syncPanelMode))
+onBeforeUnmount(() => {
+  panelMediaQuery?.removeEventListener('change', syncPanelMode)
+  restoreConferenceMicrophoneAfterTest = false
+  restoreConferenceCameraAfterTest = false
+  void audioInput.stopTest()
+  void videoInput.stopTest()
+  microphoneSource.dispose()
+})
 watch(() => live.ended.value, (ended) => {
   if (ended) {
     void transcription.stop({ flush: false })
+    restoreConferenceMicrophoneAfterTest = false
+    restoreConferenceCameraAfterTest = false
     void audioInput.stopTest()
+    void videoInput.stopTest()
   }
 })
 
@@ -79,8 +110,94 @@ async function startTranscription() {
     showContextForm.value = true
     return
   }
-  await audioInput.stopTest()
+  await stopLocalMicrophoneTest()
   await transcription.start(audioInput.selectedDeviceId.value)
+}
+
+async function toggleConferenceMicrophone() {
+  try {
+    await stopLocalMicrophoneTest(false)
+    await conference.toggleMicrophone(audioInput.selectedDeviceId.value)
+  } catch {
+    // O composable mantém a falha visível sem interromper sala, chat ou legenda.
+  }
+}
+
+async function toggleConferenceCamera() {
+  await stopLocalCameraTest(false)
+  await conference.toggleCamera(videoInput.selectedDeviceId.value).catch(() => undefined)
+}
+
+async function changeVideoInput(deviceId: string) {
+  await videoInput.selectDevice(deviceId)
+  if (!conference.cameraEnabled.value) return
+  await conference.switchDevice('videoinput', deviceId).catch(() => undefined)
+}
+
+async function startLocalMicrophoneTest() {
+  restoreConferenceMicrophoneAfterTest = false
+  if (conference.microphoneEnabled.value) {
+    try {
+      await conference.toggleMicrophone(audioInput.selectedDeviceId.value)
+      restoreConferenceMicrophoneAfterTest = true
+    } catch {
+      return
+    }
+  }
+  await audioInput.startTest(true)
+  if (audioInput.testState.value === 'error') {
+    await stopLocalMicrophoneTest()
+  }
+}
+
+async function stopLocalMicrophoneTest(restoreConference = true) {
+  const shouldRestore = restoreConference && restoreConferenceMicrophoneAfterTest
+  restoreConferenceMicrophoneAfterTest = false
+  await audioInput.stopTest()
+  if (
+    shouldRestore &&
+    !live.ended.value &&
+    !conference.microphoneEnabled.value
+  ) {
+    await conference
+      .toggleMicrophone(audioInput.selectedDeviceId.value)
+      .catch(() => undefined)
+  }
+}
+
+async function startLocalCameraTest() {
+  restoreConferenceCameraAfterTest = false
+  if (conference.cameraEnabled.value) {
+    try {
+      await conference.toggleCamera(videoInput.selectedDeviceId.value)
+      restoreConferenceCameraAfterTest = true
+    } catch {
+      return
+    }
+  }
+  await videoInput.startTest()
+  if (videoInput.testState.value === 'error') {
+    await stopLocalCameraTest()
+  }
+}
+
+async function stopLocalCameraTest(restoreConference = true) {
+  const shouldRestore = restoreConference && restoreConferenceCameraAfterTest
+  restoreConferenceCameraAfterTest = false
+  await videoInput.stopTest()
+  if (shouldRestore && !live.ended.value && !conference.cameraEnabled.value) {
+    await conference
+      .toggleCamera(videoInput.selectedDeviceId.value)
+      .catch(() => undefined)
+  }
+}
+
+async function resumeConferenceAudio() {
+  await conference.startAudio().catch(() => undefined)
+}
+
+async function retryConference() {
+  await conference.retry().catch(() => undefined)
 }
 
 async function saveContext({ context, requiresApproval }: { context: AudienceContext; requiresApproval: boolean }) {
@@ -94,7 +211,7 @@ async function saveContext({ context, requiresApproval }: { context: AudienceCon
     // falha silenciosa — contexto é opcional; o host pode pular
   } finally {
     showContextForm.value = false
-    await audioInput.stopTest()
+    await stopLocalMicrophoneTest()
     await transcription.start(audioInput.selectedDeviceId.value)
   }
 }
@@ -119,11 +236,26 @@ async function toggleApproval() {
 
 function skipContext() {
   showContextForm.value = false
-  void audioInput.stopTest().then(() => transcription.start(audioInput.selectedDeviceId.value))
+  void stopLocalMicrophoneTest().then(() =>
+    transcription.start(audioInput.selectedDeviceId.value),
+  )
 }
 
 async function changeAudioInput(deviceId: string) {
-  await audioInput.selectDevice(deviceId)
+  try {
+    const previousDeviceId = audioInput.selectedDeviceId.value
+    await switchSharedMicrophoneDevice({
+      deviceId,
+      previousDeviceId,
+      microphoneSource,
+      conference,
+      transcription,
+      stopTest: stopLocalMicrophoneTest,
+      selectDevice: audioInput.selectDevice,
+    })
+  } catch {
+    // Os composables de áudio expõem o erro recuperável na própria central.
+  }
 }
 
 async function copyInvite() {
@@ -142,7 +274,8 @@ async function end() {
   }
   await transcription.stop({ flush: true })
   if (live.status.value === 'connected') await live.waitForAudioDrain()
-  await audioInput.stopTest()
+  await stopLocalMicrophoneTest(false)
+  await stopLocalCameraTest(false)
   await live.endSession()
   confirmingEnd.value = false
 }
@@ -150,7 +283,8 @@ async function end() {
 async function leave() {
   await transcription.stop({ flush: true })
   if (live.status.value === 'connected') await live.waitForAudioDrain()
-  await audioInput.stopTest()
+  await stopLocalMicrophoneTest(false)
+  await stopLocalCameraTest(false)
   live.disconnect()
   if (live.role.value === 'GUEST') router.push('/')
   else router.push(backTo.value)
@@ -290,6 +424,16 @@ function trapPanelFocus(event: KeyboardEvent) {
             :transcript="live.transcript.value"
             :caption-state="captionState"
           />
+          <ConferenceMediaStage
+            v-if="live.session.value"
+            :participants="live.participants.value"
+            :tracks="conference.tracks.value"
+            :audio-playback-blocked="conference.audioPlaybackBlocked.value"
+            :current-participant-id="live.currentParticipantId.value"
+            :local-microphone-enabled="conference.microphoneEnabled.value"
+            :raised-participant-ids="raisedParticipantIds"
+            @resume-audio="resumeConferenceAudio"
+          />
         </section>
 
         <button
@@ -346,6 +490,41 @@ function trapPanelFocus(event: KeyboardEvent) {
         aria-label="Controles da reunião"
         :inert="isCompactPanel && !!panel"
       >
+        <ConferenceControls
+          v-if="live.session.value && !live.ended.value"
+          :media-status="conference.mediaStatus.value"
+          :media-error="conference.mediaError.value"
+          :microphone-enabled="conference.microphoneEnabled.value"
+          :camera-enabled="conference.cameraEnabled.value"
+          :microphone-pending="conference.microphonePending.value"
+          :camera-pending="conference.cameraPending.value"
+          :video-devices-supported="videoInput.supported"
+          :video-devices="videoInput.devices.value"
+          :selected-video-device-id="videoInput.selectedDeviceId.value"
+          :video-devices-loading="videoInput.loading.value"
+          :video-device-error="videoInput.error.value"
+          :camera-test-state="videoInput.testState.value"
+          :camera-test-stream="videoInput.testStream.value"
+          :audio-devices-supported="audioInput.supported"
+          :audio-devices="audioInput.devices.value"
+          :selected-audio-device-id="audioInput.selectedDeviceId.value"
+          :audio-devices-loading="audioInput.loading.value"
+          :audio-device-error="audioInput.error.value"
+          :microphone-test-state="audioInput.testState.value"
+          :microphone-test-level="audioInput.testLevel.value"
+          :microphone-test-monitor-enabled="audioInput.testMonitorEnabled.value"
+          @toggle-microphone="toggleConferenceMicrophone"
+          @toggle-camera="toggleConferenceCamera"
+          @refresh-video-devices="videoInput.refresh"
+          @select-video-device="changeVideoInput"
+          @refresh-audio-devices="audioInput.refresh"
+          @select-audio-device="changeAudioInput"
+          @start-camera-test="startLocalCameraTest"
+          @stop-camera-test="stopLocalCameraTest"
+          @start-microphone-test="startLocalMicrophoneTest"
+          @stop-microphone-test="stopLocalMicrophoneTest"
+          @retry="retryConference"
+        />
         <MicControl
           v-if="live.canPublishTranscript.value"
           class="mic"
@@ -360,20 +539,9 @@ function trapPanelFocus(event: KeyboardEvent) {
           :backend-engine="live.transcriptionStatus.value?.engine ?? undefined"
           :backend-model="live.transcriptionStatus.value?.model ?? undefined"
           :backend-inference-ms="live.transcriptionStatus.value?.inferenceMs ?? undefined"
-          :audio-devices-supported="audioInput.supported"
-          :audio-devices="audioInput.devices.value"
-          :selected-device-id="audioInput.selectedDeviceId.value"
-          :audio-devices-loading="audioInput.loading.value"
-          :audio-device-error="audioInput.error.value"
-          :microphone-test-state="audioInput.testState.value"
-          :microphone-test-level="audioInput.testLevel.value"
           :disabled="live.ended.value"
           @start="startTranscription"
           @stop="transcription.stop"
-          @refresh-audio-devices="audioInput.refresh"
-          @select-audio-device="changeAudioInput"
-          @start-microphone-test="audioInput.startTest"
-          @stop-microphone-test="audioInput.stopTest"
         />
         <button
           v-if="!live.canManage.value && !live.ended.value"
@@ -551,6 +719,12 @@ function trapPanelFocus(event: KeyboardEvent) {
 .stage > :first-child {
   flex: 1;
   min-height: 0;
+}
+.stage > .conference-media--visual {
+  order: -1;
+  flex: 0 0 auto;
+  max-height: 168px;
+  margin-bottom: 12px;
 }
 .side {
   position: relative;
@@ -896,11 +1070,17 @@ function trapPanelFocus(event: KeyboardEvent) {
     border-radius: 0;
   }
   .control-bar :deep(.mic__btn) {
-    min-width: 142px;
+    min-width: 112px;
+    padding-inline: 8px;
+  }
+  .control-bar :deep(.mic__device-trigger) {
+    width: 44px;
+    min-height: 44px;
   }
   .meeting-control,
   .hand.meeting-control {
-    min-width: 48px;
+    min-width: 44px;
+    min-height: 44px;
   }
   .control-icon {
     width: 40px;
@@ -917,11 +1097,12 @@ function trapPanelFocus(event: KeyboardEvent) {
 
 @media (max-width: 360px) {
   .control-bar :deep(.mic__btn) {
-    min-width: 128px;
-    padding-inline: 8px;
+    min-width: 96px;
+    padding-inline: 5px;
+    font-size: 10px;
   }
   .control-bar :deep(.mic__device-trigger) {
-    width: 48px;
+    width: 44px;
   }
   .control-icon {
     width: 38px;

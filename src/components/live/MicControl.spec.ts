@@ -82,31 +82,12 @@ describe('MicControl', () => {
     expect(wrapper.find('.mic__error').text()).toContain('nenhum áudio chegou')
   })
 
-  it('explica que a entrada escolhida é enviada ao backend', async () => {
-    const wrapper = mountMic({
-      audioDevices: [
-        { deviceId: 'default', groupId: '', label: 'Microfone padrão' },
-        { deviceId: 'usb-headset', groupId: '', label: 'Headset USB' },
-      ],
-      selectedDeviceId: 'default',
-      audioDevicesSupported: true,
-    })
-    await wrapper.find('.mic__device-trigger').trigger('click')
-    await wrapper.find('#audio-input-device').setValue('usb-headset')
-    expect(wrapper.emitted('select-audio-device')?.[0]).toEqual(['usb-headset'])
-    expect(wrapper.find('.mic__backend-note').text()).toContain('ASR protegido do backend')
-    expect(wrapper.find('.mic__backend-note').text()).not.toContain('processamento local')
-  })
+  it('does not duplicate device selection or microphone testing owned by the unified panel', () => {
+    const wrapper = mountMic()
 
-  it('testa o microfone localmente sem enviar o áudio de teste', async () => {
-    const wrapper = mountMic({
-      audioDevices: [{ deviceId: 'default', groupId: '', label: 'Microfone padrão' }],
-      microphoneTestState: 'idle',
-      microphoneTestLevel: 0,
-    })
-    await wrapper.find('.mic__device-trigger').trigger('click')
-    expect(wrapper.text()).toContain('O áudio do teste não é enviado')
-    await wrapper.find('.mic-test__action').trigger('click')
-    expect(wrapper.emitted('start-microphone-test')).toHaveLength(1)
+    expect(wrapper.find('.mic__device-trigger').exists()).toBe(false)
+    expect(wrapper.find('.mic-settings').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Entrada de áudio')
+    expect(wrapper.text()).not.toContain('Teste do microfone')
   })
 })

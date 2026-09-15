@@ -1,5 +1,9 @@
 import { getCurrentInstance, onBeforeUnmount, readonly, ref } from 'vue'
 import { buildAudioConstraints } from './useAudioInputDevices'
+import type {
+  MicrophoneLease,
+  SharedMicrophoneSource,
+} from './media/shared-microphone-source'
 import workletModuleUrl from './pcmCaptureProcessor.js?url&no-inline'
 
 const WORKLET_PROCESSOR_NAME = 'semantia-pcm-capture'
@@ -23,6 +27,7 @@ interface AudioChunkMessage {
 
 export interface UsePcmAudioCaptureOptions {
   onAudioChunk: (samples: Float32Array, sampleRate: number) => void
+  microphoneSource?: SharedMicrophoneSource
 }
 
 function getAudioContextCtor(): typeof AudioContext | null {
@@ -75,6 +80,7 @@ export function usePcmAudioCapture(options: UsePcmAudioCaptureOptions) {
   const audioLevel = ref(0)
 
   let stream: MediaStream | null = null
+  let microphoneLease: MicrophoneLease | null = null
   let context: AudioContext | null = null
   let source: MediaStreamAudioSourceNode | null = null
   let processor: ScriptProcessorNode | null = null
@@ -138,7 +144,9 @@ export function usePcmAudioCapture(options: UsePcmAudioCaptureOptions) {
     loading.value = false
     listening.value = false
     disconnectGraph()
-    stream?.getTracks().forEach((track) => track.stop())
+    if (microphoneLease) microphoneLease.release()
+    else stream?.getTracks().forEach((track) => track.stop())
+    microphoneLease = null
     stream = null
     const activeContext = context
     context = null
@@ -216,16 +224,25 @@ export function usePcmAudioCapture(options: UsePcmAudioCaptureOptions) {
     loading.value = true
     error.value = null
     inputState.value = 'waiting'
+    let pendingLease: MicrophoneLease | null = null
     try {
       const activeContext = new AudioContextCtor()
       context = activeContext
-      const activeStream = await navigator.mediaDevices.getUserMedia({
-        audio: buildAudioConstraints(deviceId),
-      })
+      pendingLease = options.microphoneSource
+        ? await options.microphoneSource.acquire(deviceId)
+        : null
+      const activeStream = pendingLease
+        ? new MediaStream([pendingLease.track])
+        : await navigator.mediaDevices.getUserMedia({
+            audio: buildAudioConstraints(deviceId),
+          })
       if (generation !== activeGeneration || disposed) {
-        activeStream.getTracks().forEach((track) => track.stop())
+        if (pendingLease) pendingLease.release()
+        else activeStream.getTracks().forEach((track) => track.stop())
         return false
       }
+      microphoneLease = pendingLease
+      pendingLease = null
       stream = activeStream
       source = activeContext.createMediaStreamSource(activeStream)
       silentGain = activeContext.createGain()
@@ -241,6 +258,7 @@ export function usePcmAudioCapture(options: UsePcmAudioCaptureOptions) {
       armAudioFrameTimeout(activeGeneration)
       return true
     } catch (cause) {
+      pendingLease?.release()
       if (generation !== activeGeneration) return false
       error.value = classifyCaptureError(cause)
       stop()

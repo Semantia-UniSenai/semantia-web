@@ -9,6 +9,7 @@ import type {
   AdmissionEntry,
   ChatMessage,
   LiveSessionDetails,
+  MediaCredentials,
   Participant,
   ParticipantRole,
   RaisedHand,
@@ -506,6 +507,18 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
     emitAck('hand:lower-for', { participantId })
   const endSession = () => emitAck('session:end')
 
+  function requestMediaCredentials(): Promise<Ack<MediaCredentials>> {
+    if (!joinedSocket) {
+      const error = {
+        code: 'NOT_JOINED',
+        message: 'Entre na sala antes de conectar a mídia',
+      }
+      actionError.value = error
+      return Promise.resolve({ ok: false, error })
+    }
+    return emitAck<MediaCredentials>('media:credentials')
+  }
+
   async function approveAdmission(admissionId: string) {
     const result = await emitAck('admission:approve', { admissionId })
     if (result.ok) {
@@ -566,6 +579,7 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
     lowerHand,
     lowerParticipantHand,
     endSession,
+    requestMediaCredentials,
     admissionQueue,
     admissionStatus,
     approveAdmission,

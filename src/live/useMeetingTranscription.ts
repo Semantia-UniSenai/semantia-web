@@ -5,9 +5,11 @@ import {
   type BackendAudioSegment,
 } from './useBackendAudioFinalizer'
 import { usePcmAudioCapture } from './usePcmAudioCapture'
+import type { SharedMicrophoneSource } from './media/shared-microphone-source'
 
 export interface UseMeetingTranscriptionOptions {
   deviceId?: Readonly<Ref<string>>
+  microphoneSource?: SharedMicrophoneSource
   onAudioSegment: (
     segment: BackendAudioSegment,
   ) => Promise<{ ok: boolean; error?: { code: string; message: string } }>
@@ -23,6 +25,7 @@ export function useMeetingTranscription(options: UseMeetingTranscriptionOptions)
     segmentSeconds: 5,
   })
   const capture = usePcmAudioCapture({
+    microphoneSource: options.microphoneSource,
     onAudioChunk: (samples, sampleRate) => {
       backend.addAudioChunk(samples, sampleRate)
     },
