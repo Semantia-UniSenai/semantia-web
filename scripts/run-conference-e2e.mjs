@@ -32,6 +32,9 @@ const livekitNodeIp = process.env.LIVEKIT_NODE_IP ?? '127.0.0.1'
 const livekitRtcBindAddress =
   process.env.LIVEKIT_RTC_BIND_ADDRESS ??
   (livekitNodeIp === '127.0.0.1' ? '127.0.0.1' : livekitNodeIp)
+const webkitLibraryDir =
+  process.env.SEMANTIA_WEBKIT_LIBRARY_DIR ??
+  path.join(process.env.HOME ?? '', '.cache/semantia-webkit-libs/root/usr/lib/x86_64-linux-gnu')
 const databaseUrl = `postgresql://semantia:${encodeURIComponent(postgresPassword)}@127.0.0.1:${ports.postgres}/semantia`
 const apiUrl = `http://127.0.0.1:${ports.api}`
 const webUrl = `http://127.0.0.1:${ports.web}`
@@ -47,8 +50,14 @@ function run(command, args, options = {}) {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     let output = ''
-    child.stdout.on('data', (chunk) => (output += chunk))
-    child.stderr.on('data', (chunk) => (output += chunk))
+    child.stdout.on('data', (chunk) => {
+      output += chunk
+      if (options.streamOutput) process.stdout.write(chunk)
+    })
+    child.stderr.on('data', (chunk) => {
+      output += chunk
+      if (options.streamOutput) process.stderr.write(chunk)
+    })
     child.on('error', reject)
     child.on('exit', (code) => {
       if (code === 0 || options.allowFailure) resolve({ code, output })
@@ -197,6 +206,7 @@ async function main() {
     [
       'run', '-d', '--name', livekitContainer,
       '-e', `LIVEKIT_KEYS=${livekitKey}: ${livekitSecret}`,
+      '-e', 'LIVEKIT_CONFIG=room:\n  auto_create: false',
       '-p', `127.0.0.1:${ports.livekit}:7880`,
       '-p', `${livekitRtcBindAddress}:${ports.rtcTcp}:7881`,
       '-p', `${livekitRtcBindAddress}:7882:7882/udp`,
@@ -218,6 +228,7 @@ async function main() {
     LIVEKIT_API_KEY: livekitKey,
     LIVEKIT_API_SECRET: livekitSecret,
     LIVEKIT_TOKEN_TTL_SECONDS: '600',
+    LIVEKIT_REQUEST_TIMEOUT_SECONDS: '5',
   }
   await run('pnpm', ['exec', 'prisma', 'migrate', 'deploy'], {
     cwd: apiDir,
@@ -257,11 +268,25 @@ async function main() {
   try {
     result = await run(
       'pnpm',
-      ['exec', 'playwright', 'test', 'e2e/conference-media.spec.ts', ...process.argv.slice(2)],
+      [
+        'exec',
+        'playwright',
+        'test',
+        'e2e/conference-media.spec.ts',
+        ...process.argv.slice(2).filter((argument) => argument !== '--'),
+      ],
       {
         cwd: webDir,
-        env: { ...process.env, E2E_API_URL: apiUrl, E2E_WEB_URL: webUrl },
+        env: {
+          ...process.env,
+          E2E_API_URL: apiUrl,
+          E2E_WEB_URL: webUrl,
+          LD_LIBRARY_PATH: [webkitLibraryDir, process.env.LD_LIBRARY_PATH]
+            .filter(Boolean)
+            .join(':'),
+        },
         label: 'Playwright media E2E',
+        streamOutput: true,
       },
     )
   } catch (cause) {

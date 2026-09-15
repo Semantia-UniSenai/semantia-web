@@ -1,4 +1,8 @@
 import { getCurrentInstance, onBeforeUnmount, readonly, ref } from 'vue'
+import type {
+  MicrophoneLease,
+  SharedMicrophoneSource,
+} from './media/shared-microphone-source'
 
 export interface AudioInputDevice {
   deviceId: string
@@ -64,7 +68,11 @@ export function buildAudioConstraints(deviceId: string | null): MediaTrackConstr
   }
 }
 
-export function useAudioInputDevices() {
+export interface UseAudioInputDevicesOptions {
+  microphoneSource?: SharedMicrophoneSource
+}
+
+export function useAudioInputDevices(options: UseAudioInputDevicesOptions = {}) {
   const mediaDevices = navigator.mediaDevices
   const supported = Boolean(
     typeof mediaDevices?.getUserMedia === 'function' &&
@@ -80,6 +88,7 @@ export function useAudioInputDevices() {
   const testMonitorEnabled = ref(false)
 
   let testStream: MediaStream | null = null
+  let testLease: MicrophoneLease | null = null
   let testContext: AudioContext | null = null
   let testSource: MediaStreamAudioSourceNode | null = null
   let testAnalyser: AnalyserNode | null = null
@@ -134,11 +143,13 @@ export function useAudioInputDevices() {
     }
     testSource?.disconnect()
     testAnalyser?.disconnect()
-    testStream?.getTracks().forEach((track) => track.stop())
+    if (testLease) testLease.release()
+    else testStream?.getTracks().forEach((track) => track.stop())
     const context = testContext
     testSource = null
     testAnalyser = null
     testStream = null
+    testLease = null
     testContext = null
     testLevel.value = 0
     testMonitorEnabled.value = false
@@ -158,15 +169,22 @@ export function useAudioInputDevices() {
     error.value = null
     testState.value = 'requesting'
     let pendingStream: MediaStream | null = null
+    let pendingLease: MicrophoneLease | null = null
     let pendingContext: AudioContext | null = null
     let pendingSource: MediaStreamAudioSourceNode | null = null
     let pendingAnalyser: AnalyserNode | null = null
     try {
-      pendingStream = await mediaDevices.getUserMedia({
-        audio: buildAudioConstraints(selectedDeviceId.value),
-      })
+      if (options.microphoneSource) {
+        pendingLease = await options.microphoneSource.acquire(selectedDeviceId.value)
+        pendingStream = new MediaStream([pendingLease.track])
+      } else {
+        pendingStream = await mediaDevices.getUserMedia({
+          audio: buildAudioConstraints(selectedDeviceId.value),
+        })
+      }
       if (generation !== testGeneration) {
-        pendingStream.getTracks().forEach((track) => track.stop())
+        if (pendingLease) pendingLease.release()
+        else pendingStream.getTracks().forEach((track) => track.stop())
         return
       }
 
@@ -189,6 +207,7 @@ export function useAudioInputDevices() {
       if (context.state === 'suspended') await context.resume()
 
       testStream = pendingStream
+      testLease = pendingLease
       testContext = context
       testSource = source
       testAnalyser = analyser
@@ -214,12 +233,14 @@ export function useAudioInputDevices() {
     } catch (cause) {
       pendingSource?.disconnect()
       pendingAnalyser?.disconnect()
-      pendingStream?.getTracks().forEach((track) => track.stop())
+      if (pendingLease) pendingLease.release()
+      else pendingStream?.getTracks().forEach((track) => track.stop())
       if (pendingContext && pendingContext.state !== 'closed') {
         await pendingContext.close().catch(() => undefined)
       }
       if (testStream === pendingStream) {
         testStream = null
+        testLease = null
         testContext = null
         testSource = null
         testAnalyser = null

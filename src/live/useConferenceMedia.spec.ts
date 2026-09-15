@@ -111,6 +111,22 @@ describe('useConferenceMedia', () => {
     expect(context.media.cameraEnabled.value).toBe(true)
   })
 
+  it('discards an established failed client before reconnecting from a control action', async () => {
+    const context = setup()
+    context.joined.value = true
+    await nextTick()
+    await flushPromises()
+    const failedClient = context.clients[0]!
+
+    failedClient.fire({ type: 'status', status: 'failed' })
+    await context.media.toggleCamera('camera-1')
+
+    expect(failedClient.disconnect).toHaveBeenCalledTimes(1)
+    expect(context.requestMediaCredentials).toHaveBeenCalledTimes(2)
+    expect(context.clients).toHaveLength(2)
+    expect(context.clients[1]?.setCameraEnabled).toHaveBeenCalledWith(true, 'camera-1')
+  })
+
   it('contains a rejected credential request inside media state', async () => {
     const context = setup()
     context.requestMediaCredentials.mockRejectedValueOnce(
@@ -481,6 +497,29 @@ describe('useConferenceMedia', () => {
       message: 'O microfone foi desconectado. Escolha uma entrada e tente novamente',
     })
     expect(context.media.textConnectionStatus.value).toBe('connected')
+  })
+
+  it('does not commit a late microphone publication after the physical source ends', async () => {
+    const context = setup()
+    context.joined.value = true
+    await nextTick()
+    await flushPromises()
+    let resolvePublication!: () => void
+    context.clients[0]?.publishMicrophoneTrack.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolvePublication = resolve
+      }),
+    )
+
+    const toggle = context.media.toggleMicrophone('microphone-1')
+    await Promise.resolve()
+    context.fireMicrophoneEnded()
+    resolvePublication()
+    await toggle
+
+    expect(context.media.microphoneEnabled.value).toBe(false)
+    expect(context.releaseMicrophoneLease).toHaveBeenCalledTimes(1)
+    expect(context.clients[0]?.unpublishMicrophoneTrack).toHaveBeenCalled()
   })
 
   it('coalesces concurrent conference microphone toggles', async () => {

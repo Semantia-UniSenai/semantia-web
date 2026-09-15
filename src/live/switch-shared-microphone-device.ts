@@ -15,6 +15,7 @@ interface TranscriptionMicrophoneController {
 
 export interface SwitchSharedMicrophoneDeviceOptions {
   deviceId: string
+  previousDeviceId: string
   microphoneSource: SharedMicrophoneSource
   conference: ConferenceMicrophoneController
   transcription: TranscriptionMicrophoneController
@@ -30,10 +31,61 @@ export async function switchSharedMicrophoneDevice(
     options.transcription.listening.value || options.transcription.loading.value
 
   await options.stopTest()
-  if (restoreConference) await options.conference.toggleMicrophone()
-  if (restoreTranscription) await options.transcription.stop({ flush: true })
-  await options.selectDevice(options.deviceId)
-  await options.microphoneSource.reset(options.deviceId)
-  if (restoreTranscription) await options.transcription.start(options.deviceId)
-  if (restoreConference) await options.conference.toggleMicrophone(options.deviceId)
+  let conferenceStopped = false
+  let transcriptionStopped = false
+  let deviceChangeStarted = false
+
+  try {
+    if (restoreConference) {
+      await options.conference.toggleMicrophone()
+      conferenceStopped = true
+    }
+    if (restoreTranscription) {
+      await options.transcription.stop({ flush: true })
+      transcriptionStopped = true
+    }
+    deviceChangeStarted = true
+    await options.selectDevice(options.deviceId)
+    await options.microphoneSource.reset(options.deviceId)
+    if (restoreTranscription) {
+      const started = await options.transcription.start(options.deviceId)
+      if (!started) throw new Error('Could not restart transcription on the selected input')
+    }
+    if (restoreConference) {
+      await options.conference.toggleMicrophone(options.deviceId)
+    }
+  } catch (cause) {
+    try {
+      if (deviceChangeStarted) {
+        if (options.conference.microphoneEnabled.value) {
+          await options.conference.toggleMicrophone()
+        }
+        if (
+          options.transcription.listening.value ||
+          options.transcription.loading.value
+        ) {
+          await options.transcription.stop({ flush: false })
+        }
+        await options.selectDevice(options.previousDeviceId)
+        await options.microphoneSource.reset(options.previousDeviceId)
+      }
+      if (restoreTranscription && transcriptionStopped) {
+        const restored = await options.transcription.start(options.previousDeviceId)
+        if (!restored) throw new Error('Could not restore transcription input')
+      }
+      if (
+        restoreConference &&
+        conferenceStopped &&
+        !options.conference.microphoneEnabled.value
+      ) {
+        await options.conference.toggleMicrophone(options.previousDeviceId)
+      }
+    } catch (rollbackCause) {
+      throw new AggregateError(
+        [cause, rollbackCause],
+        'Could not switch or restore the microphone input',
+      )
+    }
+    throw cause
+  }
 }

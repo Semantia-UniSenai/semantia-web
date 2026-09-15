@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import type { ConferenceStatus } from '../../live/media/types'
 import type {
   AudioInputDevice,
@@ -75,6 +75,9 @@ const emit = defineEmits<{
 
 const cameraSettingsOpen = ref(false)
 const cameraPreview = ref<HTMLVideoElement | null>(null)
+const cameraSettingsTrigger = ref<HTMLButtonElement | null>(null)
+const cameraSettingsDialog = ref<HTMLElement | null>(null)
+const cameraSettingsClose = ref<HTMLButtonElement | null>(null)
 const cameraTestActive = computed(
   () => props.cameraTestState === 'requesting' || props.cameraTestState === 'previewing',
 )
@@ -96,14 +99,16 @@ watch(
   { flush: 'post' },
 )
 
-function toggleCameraSettings() {
-  cameraSettingsOpen.value = !cameraSettingsOpen.value
-  if (cameraSettingsOpen.value) {
+async function toggleCameraSettings() {
+  if (!cameraSettingsOpen.value) {
+    cameraSettingsOpen.value = true
     emit('refresh-video-devices', false)
     emit('refresh-audio-devices', false)
-  } else {
-    closeLocalTests()
+    await nextTick()
+    cameraSettingsClose.value?.focus()
+    return
   }
+  closeCameraSettings()
 }
 
 function closeLocalTests() {
@@ -114,6 +119,26 @@ function closeLocalTests() {
 function closeCameraSettings() {
   cameraSettingsOpen.value = false
   closeLocalTests()
+  void nextTick(() => cameraSettingsTrigger.value?.focus())
+}
+
+function trapCameraSettingsFocus(event: KeyboardEvent) {
+  if (!cameraSettingsDialog.value) return
+  const focusable = Array.from(
+    cameraSettingsDialog.value.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  )
+  if (focusable.length === 0) return
+  const first = focusable[0]!
+  const last = focusable[focusable.length - 1]!
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
 }
 
 function selectVideoDevice(event: Event) {
@@ -197,11 +222,13 @@ const statusLabel = computed(() => {
     </button>
 
     <button
+      ref="cameraSettingsTrigger"
       v-if="videoDevicesSupported || audioDevicesSupported"
       type="button"
       class="camera-settings-trigger"
       aria-label="Testar câmera e microfone"
       aria-haspopup="dialog"
+      aria-controls="conference-device-settings"
       :aria-expanded="cameraSettingsOpen"
       :disabled="disabled || cameraPending || microphonePending"
       @click="toggleCameraSettings"
@@ -212,18 +239,22 @@ const statusLabel = computed(() => {
     </button>
 
     <section
+      id="conference-device-settings"
+      ref="cameraSettingsDialog"
       v-if="cameraSettingsOpen"
       class="camera-settings"
       role="dialog"
+      aria-modal="true"
       aria-label="Testar câmera e microfone"
-      @keydown.esc="closeCameraSettings"
+      @keydown.esc.stop="closeCameraSettings"
+      @keydown.tab="trapCameraSettingsFocus"
     >
       <header>
         <div>
           <small>Antes de falar com outras pessoas</small>
           <strong>Testar câmera e microfone</strong>
         </div>
-        <button type="button" aria-label="Fechar teste de câmera e microfone" @click="closeCameraSettings">×</button>
+        <button ref="cameraSettingsClose" type="button" aria-label="Fechar teste de câmera e microfone" @click="closeCameraSettings">×</button>
       </header>
 
       <div class="device-test-grid">

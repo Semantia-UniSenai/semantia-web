@@ -101,6 +101,44 @@ describe('ConferenceControls', () => {
     expect(wrapper.emitted('select-video-device')).toEqual([['usb-camera']])
   })
 
+  it('moves focus into the modal, traps Tab, closes with Escape and restores the trigger', async () => {
+    const wrapper = mount(ConferenceControls, {
+      attachTo: document.body,
+      props: {
+        mediaStatus: 'connected',
+        mediaError: null,
+        microphoneEnabled: false,
+        cameraEnabled: false,
+        videoDevicesSupported: true,
+        audioDevicesSupported: true,
+      },
+    })
+    const trigger = wrapper.get('button[aria-label="Testar câmera e microfone"]')
+
+    await trigger.trigger('click')
+    const dialog = wrapper.get('[role="dialog"][aria-label="Testar câmera e microfone"]')
+    const close = dialog.get('button[aria-label="Fechar teste de câmera e microfone"]')
+    const focusable = dialog.findAll('button, select')
+    const last = focusable.at(-1)!
+
+    expect(dialog.attributes('aria-modal')).toBe('true')
+    expect(document.activeElement).toBe(close.element)
+
+    ;(last.element as HTMLElement).focus()
+    await dialog.trigger('keydown', { key: 'Tab' })
+    expect(document.activeElement).toBe(close.element)
+
+    ;(close.element as HTMLElement).focus()
+    await dialog.trigger('keydown', { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(last.element)
+
+    await dialog.trigger('keydown', { key: 'Escape' })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(trigger.element)
+    wrapper.unmount()
+  })
+
   it('offers local camera preview and audible microphone test even when the call is unavailable', async () => {
     const previewStream = new MediaStream()
     const wrapper = mount(ConferenceControls, {

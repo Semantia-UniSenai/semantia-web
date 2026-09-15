@@ -43,8 +43,10 @@ const participantsTrigger = ref<HTMLButtonElement | null>(null)
 const isCompactPanel = ref(false)
 let lastPanelTrigger: MeetingPanel = 'chat'
 let panelMediaQuery: MediaQueryList | null = null
+let restoreConferenceMicrophoneAfterTest = false
+let restoreConferenceCameraAfterTest = false
 
-const audioInput = useAudioInputDevices()
+const audioInput = useAudioInputDevices({ microphoneSource })
 const videoInput = useVideoInputDevices()
 const transcription = useMeetingTranscription({
   microphoneSource,
@@ -87,12 +89,19 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   panelMediaQuery?.removeEventListener('change', syncPanelMode)
+  restoreConferenceMicrophoneAfterTest = false
+  restoreConferenceCameraAfterTest = false
+  void audioInput.stopTest()
+  void videoInput.stopTest()
   microphoneSource.dispose()
 })
 watch(() => live.ended.value, (ended) => {
   if (ended) {
     void transcription.stop({ flush: false })
+    restoreConferenceMicrophoneAfterTest = false
+    restoreConferenceCameraAfterTest = false
     void audioInput.stopTest()
+    void videoInput.stopTest()
   }
 })
 
@@ -101,13 +110,13 @@ async function startTranscription() {
     showContextForm.value = true
     return
   }
-  await audioInput.stopTest()
+  await stopLocalMicrophoneTest()
   await transcription.start(audioInput.selectedDeviceId.value)
 }
 
 async function toggleConferenceMicrophone() {
   try {
-    await audioInput.stopTest()
+    await stopLocalMicrophoneTest(false)
     await conference.toggleMicrophone(audioInput.selectedDeviceId.value)
   } catch {
     // O composable mantém a falha visível sem interromper sala, chat ou legenda.
@@ -115,7 +124,7 @@ async function toggleConferenceMicrophone() {
 }
 
 async function toggleConferenceCamera() {
-  await videoInput.stopTest()
+  await stopLocalCameraTest(false)
   await conference.toggleCamera(videoInput.selectedDeviceId.value).catch(() => undefined)
 }
 
@@ -126,25 +135,61 @@ async function changeVideoInput(deviceId: string) {
 }
 
 async function startLocalMicrophoneTest() {
+  restoreConferenceMicrophoneAfterTest = false
   if (conference.microphoneEnabled.value) {
     try {
       await conference.toggleMicrophone(audioInput.selectedDeviceId.value)
+      restoreConferenceMicrophoneAfterTest = true
     } catch {
       return
     }
   }
   await audioInput.startTest(true)
+  if (audioInput.testState.value === 'error') {
+    await stopLocalMicrophoneTest()
+  }
+}
+
+async function stopLocalMicrophoneTest(restoreConference = true) {
+  const shouldRestore = restoreConference && restoreConferenceMicrophoneAfterTest
+  restoreConferenceMicrophoneAfterTest = false
+  await audioInput.stopTest()
+  if (
+    shouldRestore &&
+    !live.ended.value &&
+    !conference.microphoneEnabled.value
+  ) {
+    await conference
+      .toggleMicrophone(audioInput.selectedDeviceId.value)
+      .catch(() => undefined)
+  }
 }
 
 async function startLocalCameraTest() {
+  restoreConferenceCameraAfterTest = false
   if (conference.cameraEnabled.value) {
     try {
       await conference.toggleCamera(videoInput.selectedDeviceId.value)
+      restoreConferenceCameraAfterTest = true
     } catch {
       return
     }
   }
   await videoInput.startTest()
+  if (videoInput.testState.value === 'error') {
+    await stopLocalCameraTest()
+  }
+}
+
+async function stopLocalCameraTest(restoreConference = true) {
+  const shouldRestore = restoreConference && restoreConferenceCameraAfterTest
+  restoreConferenceCameraAfterTest = false
+  await videoInput.stopTest()
+  if (shouldRestore && !live.ended.value && !conference.cameraEnabled.value) {
+    await conference
+      .toggleCamera(videoInput.selectedDeviceId.value)
+      .catch(() => undefined)
+  }
 }
 
 async function resumeConferenceAudio() {
@@ -166,7 +211,7 @@ async function saveContext({ context, requiresApproval }: { context: AudienceCon
     // falha silenciosa — contexto é opcional; o host pode pular
   } finally {
     showContextForm.value = false
-    await audioInput.stopTest()
+    await stopLocalMicrophoneTest()
     await transcription.start(audioInput.selectedDeviceId.value)
   }
 }
@@ -191,17 +236,21 @@ async function toggleApproval() {
 
 function skipContext() {
   showContextForm.value = false
-  void audioInput.stopTest().then(() => transcription.start(audioInput.selectedDeviceId.value))
+  void stopLocalMicrophoneTest().then(() =>
+    transcription.start(audioInput.selectedDeviceId.value),
+  )
 }
 
 async function changeAudioInput(deviceId: string) {
   try {
+    const previousDeviceId = audioInput.selectedDeviceId.value
     await switchSharedMicrophoneDevice({
       deviceId,
+      previousDeviceId,
       microphoneSource,
       conference,
       transcription,
-      stopTest: audioInput.stopTest,
+      stopTest: stopLocalMicrophoneTest,
       selectDevice: audioInput.selectDevice,
     })
   } catch {
@@ -225,7 +274,8 @@ async function end() {
   }
   await transcription.stop({ flush: true })
   if (live.status.value === 'connected') await live.waitForAudioDrain()
-  await audioInput.stopTest()
+  await stopLocalMicrophoneTest(false)
+  await stopLocalCameraTest(false)
   await live.endSession()
   confirmingEnd.value = false
 }
@@ -233,7 +283,8 @@ async function end() {
 async function leave() {
   await transcription.stop({ flush: true })
   if (live.status.value === 'connected') await live.waitForAudioDrain()
-  await audioInput.stopTest()
+  await stopLocalMicrophoneTest(false)
+  await stopLocalCameraTest(false)
   live.disconnect()
   if (live.role.value === 'GUEST') router.push('/')
   else router.push(backTo.value)
@@ -469,9 +520,9 @@ function trapPanelFocus(event: KeyboardEvent) {
           @refresh-audio-devices="audioInput.refresh"
           @select-audio-device="changeAudioInput"
           @start-camera-test="startLocalCameraTest"
-          @stop-camera-test="videoInput.stopTest"
+          @stop-camera-test="stopLocalCameraTest"
           @start-microphone-test="startLocalMicrophoneTest"
-          @stop-microphone-test="audioInput.stopTest"
+          @stop-microphone-test="stopLocalMicrophoneTest"
           @retry="retryConference"
         />
         <MicControl

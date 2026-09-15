@@ -43,6 +43,7 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
   let attemptVersion = 0
   let microphoneLease: MicrophoneLease | null = null
   let microphoneOperation: Promise<void> | null = null
+  let microphoneVersion = 0
   let cameraOperation: Promise<void> | null = null
   const participantsById = new Map<string, ConferenceParticipantRef>()
   const tracksByKey = new Map<string, ConferenceTrackRef>()
@@ -69,6 +70,7 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
   }
 
   function handleMicrophoneSourceEnded(): void {
+    microphoneVersion += 1
     const activeClient = client
     const wasInUse = microphoneEnabled.value || microphonePending.value
     microphoneLease = null
@@ -87,6 +89,7 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
 
   function handleEvent(event: ConferenceEvent): void {
     if (event.type === 'status') {
+      if (event.status === 'failed') void cleanupClient()
       mediaStatus.value = event.status
       return
     }
@@ -316,6 +319,7 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
         throw cause
       }
     }
+    const operationVersion = ++microphoneVersion
     let lease: MicrophoneLease
     try {
       lease = await options.microphoneSource.acquire(deviceId ?? 'default')
@@ -323,7 +327,7 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
       reportDeviceCaptureError(cause, 'microfone')
       throw cause
     }
-    if (client !== activeClient) {
+    if (client !== activeClient || operationVersion !== microphoneVersion) {
       lease.release()
       return
     }
@@ -331,10 +335,12 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
       await activeClient.publishMicrophoneTrack(lease.track)
     } catch (cause) {
       lease.release()
+      if (operationVersion !== microphoneVersion) return
       reportControlError(cause, 'Não foi possível alterar o microfone da chamada')
       throw cause
     }
-    if (client !== activeClient) {
+    if (client !== activeClient || operationVersion !== microphoneVersion) {
+      await activeClient.unpublishMicrophoneTrack().catch(() => undefined)
       lease.release()
       return
     }
@@ -357,6 +363,7 @@ export function useConferenceMedia(options: UseConferenceMediaOptions) {
   }
 
   async function cleanupClient(): Promise<void> {
+    microphoneVersion += 1
     const currentClient = client
     client = null
     const activeMicrophoneLease = microphoneLease

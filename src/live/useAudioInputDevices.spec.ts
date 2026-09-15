@@ -6,6 +6,7 @@ import {
   useAudioInputDevices,
   type UseAudioInputDevices,
 } from './useAudioInputDevices'
+import type { SharedMicrophoneSource } from './media/shared-microphone-source'
 
 const stopTrack = vi.fn()
 const closeContext = vi.fn().mockResolvedValue(undefined)
@@ -53,12 +54,12 @@ function device(deviceId: string, label = '', groupId = ''): MediaDeviceInfo {
   }
 }
 
-function mountDevices() {
+function mountDevices(options?: { microphoneSource?: SharedMicrophoneSource }) {
   let api!: UseAudioInputDevices
   const wrapper = mount(
     defineComponent({
       setup() {
-        api = useAudioInputDevices()
+        api = useAudioInputDevices(options)
         return () => null
       },
     }),
@@ -108,6 +109,37 @@ afterEach(() => {
 })
 
 describe('useAudioInputDevices', () => {
+  it('tests through a shared microphone lease instead of a competing capture', async () => {
+    const release = vi.fn()
+    const leaseTrack = { stop: vi.fn() } as unknown as MediaStreamTrack
+    const microphoneSource = {
+      acquire: vi.fn().mockResolvedValue({ track: leaseTrack, release }),
+      reset: vi.fn(),
+      dispose: vi.fn(),
+    }
+    vi.stubGlobal(
+      'MediaStream',
+      class {
+        private readonly tracks: MediaStreamTrack[]
+        constructor(tracks: MediaStreamTrack[]) {
+          this.tracks = tracks
+        }
+        getTracks() {
+          return this.tracks
+        }
+      },
+    )
+    const { api } = mountDevices({ microphoneSource })
+
+    await api.startTest()
+    await api.stopTest()
+
+    expect(microphoneSource.acquire).toHaveBeenCalledWith('default')
+    expect(getUserMedia).not.toHaveBeenCalled()
+    expect(release).toHaveBeenCalledTimes(1)
+    expect(leaseTrack.stop).not.toHaveBeenCalled()
+  })
+
   it('reproduces the selected microphone locally only when monitoring is explicit', async () => {
     const { api } = mountDevices()
 
