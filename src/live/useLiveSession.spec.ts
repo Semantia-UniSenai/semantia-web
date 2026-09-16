@@ -186,6 +186,130 @@ describe('useLiveSession generic room contract', () => {
     })
   })
 
+  it('hidrata a adaptação persistida sem substituir o literal', () => {
+    const { socket, live } = setup()
+    live.connect('session-1')
+
+    socket.fire('session:state', {
+      ...state,
+      transcript: [
+        {
+          id: 'segment-1',
+          seq: 1,
+          text: 'O prazo é 42 dias.',
+          cleaningStrategyVersion: 'pt-br-conservative-v1',
+          at: '2026-08-10T12:00:00.000Z',
+          adaptation: {
+            text: 'O prazo total é 42 dias.',
+            status: 'succeeded',
+            failureCode: null,
+            automatic: true,
+            contextVersion: 2,
+            promptVersion: 'pt-br-accessible-v1',
+            provider: 'fake',
+            model: 'fake-deterministic-v1',
+            at: '2026-08-10T12:00:01.000Z',
+          },
+        },
+      ],
+    })
+
+    expect(live.transcript.value[0]).toMatchObject({
+      id: 'segment-1',
+      text: 'O prazo é 42 dias.',
+      adaptation: {
+        text: 'O prazo total é 42 dias.',
+        status: 'succeeded',
+        contextVersion: 2,
+      },
+    })
+  })
+
+  it('anexa transcript:adapted ao mesmo segmento sem alterar o literal', () => {
+    const { socket, live } = setup()
+    live.connect('session-1')
+    socket.fire('session:state', state)
+    socket.fire('transcript:final', {
+      id: 'segment-1',
+      seq: 1,
+      text: 'A pauta será apresentada.',
+      cleaningStrategyVersion: 'pt-br-conservative-v1',
+      at: '2026-08-10T12:00:00.000Z',
+    })
+
+    socket.fire('transcript:adapted', {
+      segmentId: 'segment-1',
+      sessionId: 'session-1',
+      seq: 1,
+      adaptation: {
+        text: 'A pauta será mostrada.',
+        status: 'succeeded',
+        failureCode: null,
+        automatic: true,
+        contextVersion: 2,
+        promptVersion: 'pt-br-accessible-v1',
+        provider: 'fake',
+        model: 'fake-deterministic-v1',
+        at: '2026-08-10T12:00:01.000Z',
+      },
+    })
+
+    expect(live.transcript.value).toHaveLength(1)
+    expect(live.transcript.value[0]).toMatchObject({
+      text: 'A pauta será apresentada.',
+      adaptation: { text: 'A pauta será mostrada.', status: 'succeeded' },
+    })
+  })
+
+  it('aplica adaptação recebida antes do literal e ignora eventos stale', () => {
+    const { socket, live } = setup()
+    live.connect('session-1')
+    socket.fire('session:state', state)
+    const event = {
+      segmentId: 'segment-1',
+      sessionId: 'session-1',
+      seq: 1,
+      adaptation: {
+        text: 'Texto mais direto.',
+        status: 'succeeded',
+        failureCode: null,
+        automatic: true,
+        contextVersion: 3,
+        promptVersion: 'pt-br-accessible-v1',
+        provider: 'fake',
+        model: 'fake-deterministic-v1',
+        at: '2026-08-10T12:00:02.000Z',
+      },
+    }
+    socket.fire('transcript:adapted', event)
+    socket.fire('transcript:adapted', {
+      ...event,
+      adaptation: {
+        ...event.adaptation,
+        text: 'Versão anterior.',
+        contextVersion: 2,
+      },
+    })
+    socket.fire('transcript:final', {
+      id: 'segment-1',
+      seq: 1,
+      text: 'Texto original.',
+      cleaningStrategyVersion: 'pt-br-conservative-v1',
+      at: '2026-08-10T12:00:00.000Z',
+    })
+    socket.fire('transcript:adapted', {
+      ...event,
+      sessionId: 'other-session',
+      adaptation: { ...event.adaptation, text: 'Evento de outra sala.' },
+    })
+
+    expect(live.transcript.value).toHaveLength(1)
+    expect(live.transcript.value[0]).toMatchObject({
+      text: 'Texto original.',
+      adaptation: { text: 'Texto mais direto.', contextVersion: 3 },
+    })
+  })
+
   it('hydrates host publication permission from the real gateway self envelope', () => {
     const { socket, live } = setup()
     live.connect('session-1')
