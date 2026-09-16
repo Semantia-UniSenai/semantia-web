@@ -397,6 +397,43 @@ describe('LiveRoomView accessible stage layout', () => {
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
   })
 
+  it('exibe banner de sala de espera quando há fila e painel não está em Pessoas', async () => {
+    liveMock.admissionQueue.value = [
+      { admissionId: 'adm-1', displayName: 'Rui', isGuest: false, requestedAt: '2026-07-31T12:00:00.000Z' },
+    ]
+    const wrapper = mountRoom()
+
+    expect(wrapper.find('[role="alert"][aria-live="assertive"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('1 pessoa aguardando aprovação')
+  })
+
+  it('oculta banner de sala de espera quando painel está em Pessoas', async () => {
+    liveMock.admissionQueue.value = [
+      { admissionId: 'adm-1', displayName: 'Rui', isGuest: false, requestedAt: '2026-07-31T12:00:00.000Z' },
+    ]
+    const wrapper = mountRoom()
+
+    const peopleTrigger = wrapper
+      .findAll('button[aria-controls="meeting-panel"]')
+      .find((b) => b.text().includes('Pessoas'))!
+    await peopleTrigger.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[role="alert"][aria-live="assertive"]').exists()).toBe(false)
+  })
+
+  it('banner Ver abre painel de Pessoas', async () => {
+    liveMock.admissionQueue.value = [
+      { admissionId: 'adm-1', displayName: 'Rui', isGuest: false, requestedAt: '2026-07-31T12:00:00.000Z' },
+    ]
+    const wrapper = mountRoom()
+
+    await wrapper.get('.admission-banner__btn').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="meeting-panel"]').exists()).toBe(true)
+  })
+
   it('mantém leitura e remove controles de mutação após o encerramento', () => {
     liveMock.session.value = { ...liveMock.session.value!, status: 'ENDED', endedAt: '2026-07-31T13:00:00.000Z' }
     const wrapper = mountRoom()

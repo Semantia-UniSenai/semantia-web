@@ -36,6 +36,12 @@ const confirmDialogRef = ref<HTMLElement | null>(null)
 const confirmCancelButton = ref<HTMLButtonElement | null>(null)
 let removeTriggerElement: HTMLButtonElement | null = null
 
+const showAdmissionBanner = computed(
+  () => live.canManage.value && live.admissionQueue.value.length > 0 && panel.value !== 'participants',
+)
+const admissionNewArrival = ref(false)
+let admissionArrivalTimer: ReturnType<typeof setTimeout> | null = null
+
 const audioInput = useAudioInputDevices()
 const transcription = useMeetingTranscription({
   deviceId: audioInput.selectedDeviceId,
@@ -72,7 +78,19 @@ onMounted(() => {
   syncPanelMode()
   panelMediaQuery.addEventListener('change', syncPanelMode)
 })
-onBeforeUnmount(() => panelMediaQuery?.removeEventListener('change', syncPanelMode))
+onBeforeUnmount(() => {
+  panelMediaQuery?.removeEventListener('change', syncPanelMode)
+  if (admissionArrivalTimer !== null) clearTimeout(admissionArrivalTimer)
+})
+watch(() => live.admissionQueue.value.length, (newLen, oldLen) => {
+  if (newLen > (oldLen ?? 0) && newLen > 0) {
+    admissionNewArrival.value = false
+    void nextTick(() => {
+      admissionNewArrival.value = true
+      admissionArrivalTimer = window.setTimeout(() => { admissionNewArrival.value = false }, 2500)
+    })
+  }
+})
 watch(() => live.ended.value, (ended) => {
   if (ended) {
     void transcription.stop({ flush: false })
@@ -366,6 +384,19 @@ function trapPanelFocus(event: KeyboardEvent) {
         {{ live.session.value ? 'Reconectando à reunião segura…' : 'Conectando à reunião segura…' }}
       </div>
       <div v-if="live.ended.value" class="ended-banner" role="status">Reunião encerrada. O conteúdo está disponível somente para leitura conforme a retenção configurada.</div>
+
+      <div
+        v-if="showAdmissionBanner"
+        class="admission-banner"
+        :class="{ 'admission-banner--new': admissionNewArrival }"
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>{{ live.admissionQueue.value.length === 1 ? '1 pessoa aguardando aprovação' : `${live.admissionQueue.value.length} pessoas aguardando aprovação` }}</span>
+        <button type="button" class="admission-banner__btn" @click="togglePanel('participants')">Ver</button>
+      </div>
 
       <div class="workspace" :class="{ 'workspace--panel-open': panel }">
         <section
@@ -906,6 +937,65 @@ function trapPanelFocus(event: KeyboardEvent) {
   color: #dbe3f5;
   background: rgba(40, 51, 72, 0.96);
 }
+.admission-banner {
+  position: absolute;
+  z-index: 20;
+  top: 78px;
+  left: 50%;
+  width: min(480px, calc(100vw - 32px));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px 10px 14px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 193, 87, 0.38);
+  border-radius: 14px;
+  color: #ffe9a0;
+  background: rgba(62, 40, 5, 0.96);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(8px);
+  animation: meeting-sheet-in 0.18s ease-out;
+}
+.admission-banner svg {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  color: #ffc657;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.admission-banner span {
+  flex: 1;
+  font: 650 12px var(--body, inherit);
+  line-height: 1.3;
+}
+.admission-banner__btn {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid rgba(255, 193, 87, 0.35);
+  border-radius: 8px;
+  color: #ffe9a0;
+  background: rgba(255, 193, 87, 0.12);
+  font: 750 11px var(--display, inherit);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s ease;
+}
+.admission-banner__btn:hover {
+  background: rgba(255, 193, 87, 0.24);
+}
+.admission-banner--new {
+  animation: meeting-sheet-in 0.18s ease-out, admission-ring 0.55s ease-out;
+}
+@keyframes admission-ring {
+  0%   { box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36); }
+  35%  { box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36), 0 0 0 5px rgba(255, 193, 87, 0.35); }
+  100% { box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36), 0 0 0 8px rgba(255, 193, 87, 0); }
+}
 .fatal {
   grid-row: 2 / 4;
   align-self: center;
@@ -1092,6 +1182,8 @@ function trapPanelFocus(event: KeyboardEvent) {
 @media (prefers-reduced-motion: reduce) {
   .side,
   .confirm-dialog,
+  .admission-banner,
+  .admission-banner--new,
   .status.reconnecting i {
     animation: none;
   }
