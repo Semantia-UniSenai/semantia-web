@@ -241,6 +241,84 @@ async function capturedTrackIsLive(page: Page, kind: 'audio' | 'video'): Promise
   }, kind)
 }
 
+test('keeps context open without media capture when save fails and succeeds on retry', async ({
+  page,
+  request,
+}) => {
+  const fixture = await createMeeting(request)
+  await installHostSession(page, fixture)
+  let contextAttempts = 0
+  await page.route('**/api/sessions/*/context', async (route) => {
+    contextAttempts += 1
+    if (contextAttempts === 1) {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'temporary failure' }),
+      })
+      return
+    }
+    await route.continue()
+  })
+
+  await page.goto(`/sala/${fixture.meetingId}`)
+  const contextForm = page.getByRole('region', { name: 'Configuração da plateia' })
+  await expect(contextForm).toBeVisible()
+  await contextForm.getByLabel('Assunto ou domínio *').fill('Planejamento do projeto')
+  await contextForm.getByRole('button', { name: 'Salvar e continuar' }).click()
+
+  await expect(contextForm).toBeVisible()
+  await expect(
+    contextForm.getByText('Não foi possível salvar o contexto. Tente novamente.'),
+  ).toBeVisible()
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as typeof window & { __semantiaCapturedTracks?: MediaStreamTrack[] })
+            .__semantiaCapturedTracks?.length ?? 0,
+      ),
+    )
+    .toBe(0)
+
+  await contextForm.getByRole('button', { name: 'Salvar e continuar' }).click()
+  await expect(contextForm).toBeHidden()
+  expect(contextAttempts).toBe(2)
+
+  const captionMode = page.getByRole('group', { name: 'Versão da legenda' })
+  await expect(captionMode.getByRole('button', { name: 'Literal' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await captionMode.getByRole('button', { name: 'Adaptado' }).click()
+  await expect(captionMode.getByRole('button', { name: 'Adaptado' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('semantia.captions.mode')))
+    .toBe('adapted')
+
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as typeof window & { __semantiaCapturedTracks?: MediaStreamTrack[] })
+            .__semantiaCapturedTracks?.length ?? 0,
+      ),
+    )
+    .toBe(0)
+
+  const sessionResponse = await request.get(
+    `${apiURL}/api/sessions/${fixture.meetingId}`,
+    { headers: { Authorization: 'Bearer ' + fixture.host.accessToken } },
+  )
+  expect(sessionResponse.ok()).toBe(true)
+  expect(await sessionResponse.json()).toMatchObject({
+    audienceContext: { domain: 'Planejamento do projeto' },
+  })
+})
+
 test('previews camera and audibly monitors microphone locally without publishing', async ({
   page,
   request,

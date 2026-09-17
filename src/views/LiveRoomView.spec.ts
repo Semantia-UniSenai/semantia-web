@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type {
@@ -36,6 +36,12 @@ const routerMocks = vi.hoisted(() => ({
   },
 }))
 const switchSharedMicrophoneDeviceMock = vi.hoisted(() => vi.fn())
+const sessionContextMocks = vi.hoisted(() => ({
+  updateSessionContext: vi.fn(),
+  patchSessionSettings: vi.fn(),
+}))
+
+vi.mock('../api/sessions-context', () => sessionContextMocks)
 
 vi.mock('vue-router', () => ({
   RouterLink: {
@@ -289,6 +295,10 @@ beforeEach(() => {
   conferenceMock = createConferenceMock()
   sharedMicrophoneSourceMock = createSharedMicrophoneSourceMock()
   conferenceOptions = null
+  sessionContextMocks.updateSessionContext.mockReset()
+  sessionContextMocks.updateSessionContext.mockResolvedValue({})
+  sessionContextMocks.patchSessionSettings.mockReset()
+  sessionContextMocks.patchSessionSettings.mockResolvedValue({})
   transcriptionOptions = null
   audioInputOptions = undefined
   compactViewport = false
@@ -488,6 +498,21 @@ describe('LiveRoomView accessible stage layout', () => {
     await wrapper.get('.context-form .btn-ghost').trigger('click')
 
     expect(wrapper.find('[aria-label="Configuração da plateia"]').exists()).toBe(false)
+    expect(transcriptionMock.start).not.toHaveBeenCalled()
+  })
+
+  it('mantém o formulário aberto e a captura pausada quando salvar contexto falha', async () => {
+    sessionContextMocks.updateSessionContext.mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mountRoom()
+    await wrapper.vm.$nextTick()
+    await wrapper.get('#ctx-domain').setValue('Planejamento do projeto')
+
+    await wrapper.get('.context-form form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.find('[aria-label="Configuração da plateia"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Não foi possível salvar o contexto. Tente novamente.')
+    expect(liveMock.session.value?.audienceContext).toBeNull()
     expect(transcriptionMock.start).not.toHaveBeenCalled()
   })
 

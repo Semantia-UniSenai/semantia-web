@@ -45,8 +45,22 @@ interface CaptionLine {
   text: string
 }
 
+type CaptionMode = 'literal' | 'adapted'
+
+const MODE_KEY = 'semantia.captions.mode'
+const savedCaptionMode = localStorage.getItem(MODE_KEY)
+const captionMode = ref<CaptionMode>(savedCaptionMode === 'adapted' ? 'adapted' : 'literal')
+const displayedTranscript = computed(() =>
+  props.transcript.map((entry) => ({
+    ...entry,
+    text:
+      captionMode.value === 'adapted' && entry.adaptation?.status === 'succeeded'
+        ? entry.adaptation.text
+        : entry.text,
+  })),
+)
 const lines = computed<CaptionLine[]>(() =>
-  props.transcript.flatMap((entry) =>
+  displayedTranscript.value.flatMap((entry) =>
     splitIntoLines(entry.text).map((text, i) => ({
       key: `${entry.seq}:${i}`,
       text,
@@ -54,7 +68,7 @@ const lines = computed<CaptionLine[]>(() =>
   ),
 )
 const latestFinalAnnouncement = computed(
-  () => props.transcript.at(-1)?.text.trim() ?? '',
+  () => displayedTranscript.value.at(-1)?.text.trim() ?? '',
 )
 const emptyMessage = computed(() =>
   props.captionState === 'paused'
@@ -81,6 +95,11 @@ onMounted(() => {
   scrollToLive('auto')
 })
 
+function setCaptionMode(mode: CaptionMode) {
+  captionMode.value = mode
+  localStorage.setItem(MODE_KEY, mode)
+}
+
 function setFont(delta: number) {
   const next = fontStep.value + delta
   if (next < 0 || next >= FONT_STEPS.length) return
@@ -103,7 +122,7 @@ function scrollToLive(behavior: ScrollBehavior = 'smooth') {
 
 // Segue o vivo enquanto o leitor estiver no fim (não rouba a rolagem de quem relê).
 watch(
-  () => props.transcript.length,
+  () => [props.transcript.length, captionMode.value],
   async () => {
     if (!pinned.value) return
     await nextTick()
@@ -131,6 +150,25 @@ watch(
           <small>{{ captionStatus.detail }}</small>
         </span>
       </span>
+      <div class="captions__mode" role="group" aria-label="Versão da legenda">
+        <button
+          type="button"
+          data-caption-mode="literal"
+          :aria-pressed="captionMode === 'literal'"
+          @click="setCaptionMode('literal')"
+        >
+          Literal
+        </button>
+        <button
+          type="button"
+          data-caption-mode="adapted"
+          :aria-pressed="captionMode === 'adapted'"
+          title="Usa o texto literal quando a adaptação não estiver disponível"
+          @click="setCaptionMode('adapted')"
+        >
+          Adaptado
+        </button>
+      </div>
       <div class="captions__font" role="group" aria-label="Tamanho do texto">
         <button
           type="button"
@@ -241,6 +279,15 @@ watch(
   display: inline-flex;
   gap: 6px;
 }
+.captions__mode {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--night-line);
+  border-radius: 10px;
+  background: var(--night-2);
+}
+.captions__mode button,
 .captions__font button {
   padding: 6px 12px;
   border: 1px solid var(--night-line);
@@ -251,6 +298,19 @@ watch(
   font-weight: 700;
   font-size: 13px;
   cursor: pointer;
+}
+.captions__mode button {
+  border-color: transparent;
+  background: transparent;
+}
+.captions__mode button[aria-pressed='true'] {
+  background: var(--brand);
+  color: #fff;
+}
+.captions__mode button:focus-visible,
+.captions__font button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
 }
 .captions__font button:hover:not(:disabled) {
   border-color: var(--blue);
@@ -495,6 +555,16 @@ watch(
   .captions__tools {
     min-height: 60px;
     padding: 8px 10px 8px 14px;
+    flex-wrap: wrap;
+  }
+  .captions__label {
+    flex: 1 1 100%;
+  }
+  .captions__mode {
+    flex: 1 1 auto;
+  }
+  .captions__mode button {
+    flex: 1;
   }
   .captions__label small {
     max-width: 54vw;

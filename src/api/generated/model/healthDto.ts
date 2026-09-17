@@ -5,9 +5,11 @@
  * Accessible real-time communication rooms with live transcription.
  * OpenAPI spec version: 1.0.0
  */
+import type { TranscriptAdaptationHealthDto } from './transcriptAdaptationHealthDto';
 
 export interface HealthDto {
   status: string;
   /** True if SELECT 1 succeeded */
   db: boolean;
+  transcriptAdaptation: TranscriptAdaptationHealthDto;
 }

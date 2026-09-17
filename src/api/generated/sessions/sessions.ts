@@ -30,6 +30,7 @@ import type {
 } from 'vue';
 
 import type {
+  AudienceContextDto,
   CreateGuestAccessDto,
   GetSessionParams,
   GetSessionTranscriptParams,
@@ -183,16 +184,20 @@ export const useCreateGuestAccess = <TError = ErrorType<unknown>,
       return useMutation(getCreateGuestAccessMutationOptions(options), queryClient);
     }
     /**
- * @summary End a session idempotently
+ * @summary Set the audience context for subsequent transcript segments
  */
-export const endSession = (
+export const updateSessionContext = (
     id: MaybeRef<string>,
+    audienceContextDto: MaybeRef<AudienceContextDto>,
  signal?: AbortSignal
 ) => {
       id = unref(id);
+audienceContextDto = unref(audienceContextDto);
 
       return customInstance<SessionDto>(
-      {url: `/api/sessions/${id}/end`, method: 'POST', signal
+      {url: `/api/sessions/${id}/context`, method: 'PATCH',
+      headers: {'Content-Type': 'application/json', },
+      data: audienceContextDto, signal
     },
       );
     }
@@ -200,11 +205,11 @@ export const endSession = (
 
 
 
-export const getEndSessionMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof endSession>>, TError,{id: string}, TContext>, }
-): UseMutationOptions<Awaited<ReturnType<typeof endSession>>, TError,{id: string}, TContext> => {
+export const getUpdateSessionContextMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSessionContext>>, TError,{id: string;data: BodyType<AudienceContextDto>}, TContext>, }
+): UseMutationOptions<Awaited<ReturnType<typeof updateSessionContext>>, TError,{id: string;data: BodyType<AudienceContextDto>}, TContext> => {
 
-const mutationKey = ['endSession'];
+const mutationKey = ['updateSessionContext'];
 const {mutation: mutationOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -214,10 +219,10 @@ const {mutation: mutationOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof endSession>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSessionContext>>, {id: string;data: BodyType<AudienceContextDto>}> = (props) => {
+          const {id,data} = props ?? {};
 
-          return  endSession(id,)
+          return  updateSessionContext(id,data,)
         }
 
 
@@ -227,22 +232,22 @@ const {mutation: mutationOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type EndSessionMutationResult = NonNullable<Awaited<ReturnType<typeof endSession>>>
-
-    export type EndSessionMutationError = ErrorType<unknown>
+    export type UpdateSessionContextMutationResult = NonNullable<Awaited<ReturnType<typeof updateSessionContext>>>
+    export type UpdateSessionContextMutationBody = BodyType<AudienceContextDto>
+    export type UpdateSessionContextMutationError = ErrorType<unknown>
 
     /**
- * @summary End a session idempotently
+ * @summary Set the audience context for subsequent transcript segments
  */
-export const useEndSession = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof endSession>>, TError,{id: string}, TContext>, }
+export const useUpdateSessionContext = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSessionContext>>, TError,{id: string;data: BodyType<AudienceContextDto>}, TContext>, }
  , queryClient?: QueryClient): UseMutationReturnType<
-        Awaited<ReturnType<typeof endSession>>,
+        Awaited<ReturnType<typeof updateSessionContext>>,
         TError,
-        {id: string},
+        {id: string;data: BodyType<AudienceContextDto>},
         TContext
       > => {
-      return useMutation(getEndSessionMutationOptions(options), queryClient);
+      return useMutation(getUpdateSessionContextMutationOptions(options), queryClient);
     }
     /**
  * @summary Read session details with membership or an active invite token

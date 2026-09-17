@@ -35,6 +35,8 @@ const confirmingEnd = ref(false)
 const showContextForm = ref(false)
 const entryContextPromptShown = ref(false)
 const startTranscriptionAfterContext = ref(false)
+const contextSaving = ref(false)
+const contextSaveError = ref<string | null>(null)
 type MeetingPanel = 'chat' | 'participants'
 
 const panel = ref<MeetingPanel | null>(null)
@@ -121,6 +123,7 @@ watch(
     }
     entryContextPromptShown.value = true
     startTranscriptionAfterContext.value = false
+    contextSaveError.value = null
     showContextForm.value = true
   },
   { immediate: true },
@@ -129,6 +132,7 @@ watch(
 async function startTranscription() {
   if (live.canManage.value && !live.session.value?.audienceContext) {
     startTranscriptionAfterContext.value = true
+    contextSaveError.value = null
     showContextForm.value = true
     return
   }
@@ -224,14 +228,13 @@ async function retryConference() {
 
 async function saveContext({ context, requiresApproval }: { context: AudienceContext; requiresApproval: boolean }) {
   const id = sessionId.value
+  contextSaving.value = true
+  contextSaveError.value = null
   try {
     await updateSessionContext(id, { ...context, requiresApproval })
     if (live.session.value) {
       live.session.value = { ...live.session.value, audienceContext: context, requiresApproval }
     }
-  } catch {
-    // falha silenciosa — contexto é opcional; o host pode pular
-  } finally {
     const shouldStartTranscription = startTranscriptionAfterContext.value
     startTranscriptionAfterContext.value = false
     showContextForm.value = false
@@ -239,6 +242,10 @@ async function saveContext({ context, requiresApproval }: { context: AudienceCon
       await stopLocalMicrophoneTest()
       await transcription.start(audioInput.selectedDeviceId.value)
     }
+  } catch {
+    contextSaveError.value = 'Não foi possível salvar o contexto. Tente novamente.'
+  } finally {
+    contextSaving.value = false
   }
 }
 
@@ -263,6 +270,7 @@ async function toggleApproval() {
 function skipContext() {
   const shouldStartTranscription = startTranscriptionAfterContext.value
   startTranscriptionAfterContext.value = false
+  contextSaveError.value = null
   showContextForm.value = false
   if (shouldStartTranscription) {
     void stopLocalMicrophoneTest().then(() =>
@@ -365,6 +373,8 @@ function trapPanelFocus(event: KeyboardEvent) {
 <template>
   <AudienceContextForm
     v-if="showContextForm"
+    :saving="contextSaving"
+    :save-error="contextSaveError"
     @submit="saveContext"
     @skip="skipContext"
   />

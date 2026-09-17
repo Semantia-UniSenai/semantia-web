@@ -5,6 +5,7 @@
  * Accessible real-time communication rooms with live transcription.
  * OpenAPI spec version: 1.0.0
  */
+import type { AudienceContextDto } from './audienceContextDto';
 import type { SessionDtoEndedAt } from './sessionDtoEndedAt';
 import type { SessionDtoStartedAt } from './sessionDtoStartedAt';
 import type { SessionStatus } from './sessionStatus';
@@ -16,6 +17,12 @@ export interface SessionDto {
   /** Opaque capability token for this session */
   joinToken: string;
   status: SessionStatus;
+  /** @nullable */
+  audienceContext: AudienceContextDto | null;
+  /** Monotonic version of the persisted audience context */
+  audienceContextVersion: number;
+  /** Whether new participants require host approval */
+  requiresApproval: boolean;
   createdAt: string;
   /** @nullable */
   startedAt: SessionDtoStartedAt;

@@ -4,6 +4,7 @@ import type { TranscriptEntry } from '../../live/types'
 import CaptionStage from './CaptionStage.vue'
 
 const FONT_KEY = 'semantia.captions.font'
+const MODE_KEY = 'semantia.captions.mode'
 
 function entry(seq: number, text: string): TranscriptEntry {
   return {
@@ -14,6 +15,28 @@ function entry(seq: number, text: string): TranscriptEntry {
     cleaningStrategyVersion: 'pt-br-conservative-v1',
     confidence: null,
     createdAt: '2026-07-02T10:00:00.000Z',
+  }
+}
+
+function adaptedEntry(
+  seq: number,
+  literalText: string,
+  adaptedText: string,
+  status: 'succeeded' | 'fallback' | 'bypassed' = 'succeeded',
+): TranscriptEntry {
+  return {
+    ...entry(seq, literalText),
+    adaptation: {
+      text: adaptedText,
+      status,
+      failureCode: status === 'succeeded' ? null : 'PROVIDER_ERROR',
+      automatic: true,
+      contextVersion: 2,
+      promptVersion: 'pt-br-accessible-v2',
+      provider: 'fake',
+      model: 'deterministic-v1',
+      at: '2026-09-16T21:00:00.000Z',
+    },
   }
 }
 
@@ -50,6 +73,51 @@ describe('CaptionStage', () => {
     expect(lines[1]!.text()).toBe('Segunda frase.')
     expect(wrapper.find('.captions__line--partial').exists()).toBe(false)
     expect(lines[1]!.classes()).toContain('captions__line--current')
+  })
+
+  it('mantém o literal como padrão mesmo quando há adaptação pronta', () => {
+    const wrapper = mountStage({
+      transcript: [adaptedEntry(1, 'Texto literal.', 'Texto adaptado.')],
+    })
+
+    expect(wrapper.get('.captions__line').text()).toBe('Texto literal.')
+    expect(wrapper.get('[data-caption-mode="literal"]').attributes('aria-pressed')).toBe('true')
+  })
+
+  it('permite escolher adaptado e persiste apenas essa preferência local', async () => {
+    const wrapper = mountStage({
+      transcript: [adaptedEntry(1, 'Texto literal.', 'Texto adaptado.')],
+    })
+
+    await wrapper.get('[data-caption-mode="adapted"]').trigger('click')
+
+    expect(wrapper.get('.captions__line').text()).toBe('Texto adaptado.')
+    expect(wrapper.get('[data-testid="caption-announcer"]').text()).toBe('Texto adaptado.')
+    expect(localStorage.getItem(MODE_KEY)).toBe('adapted')
+  })
+
+  it.each(['fallback', 'bypassed'] as const)(
+    'usa literal no modo adaptado quando o resultado é %s',
+    async (status) => {
+      const wrapper = mountStage({
+        transcript: [adaptedEntry(1, 'Texto literal.', 'Não deve aparecer.', status)],
+      })
+
+      await wrapper.get('[data-caption-mode="adapted"]').trigger('click')
+
+      expect(wrapper.get('.captions__line').text()).toBe('Texto literal.')
+    },
+  )
+
+  it('restaura uma preferência adaptada válida sem alterar o transcript', () => {
+    localStorage.setItem(MODE_KEY, 'adapted')
+
+    const wrapper = mountStage({
+      transcript: [adaptedEntry(1, 'Texto literal.', 'Texto adaptado.')],
+    })
+
+    expect(wrapper.get('.captions__line').text()).toBe('Texto adaptado.')
+    expect(wrapper.get('[data-caption-mode="adapted"]').attributes('aria-pressed')).toBe('true')
   })
 
   it('quebra um final longo em linhas curtas balanceadas', () => {
