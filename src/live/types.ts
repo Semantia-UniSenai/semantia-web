@@ -22,7 +22,20 @@ export interface ChatMessage {
   createdAt: string
 }
 
+export interface TranscriptAdaptation {
+  text: string
+  status: 'succeeded' | 'fallback' | 'bypassed'
+  failureCode: string | null
+  automatic: true
+  contextVersion: number
+  promptVersion: string
+  provider: string
+  model: string
+  at: string
+}
+
 export interface TranscriptEntry {
+  id?: string
   seq: number
   startMs: number
   endMs?: number | null
@@ -30,6 +43,7 @@ export interface TranscriptEntry {
   cleaningStrategyVersion: string
   confidence?: number | null
   createdAt: string
+  adaptation?: TranscriptAdaptation | null
 }
 
 export interface AudienceContext {
