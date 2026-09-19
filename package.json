@@ -10,6 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:media:local": "node scripts/run-conference-e2e.mjs",
     "typecheck": "vue-tsc -b",
     "api:spec": "curl -sf ${API_DOCS_URL:-http://localhost:3000/docs-json} -o openapi.json && echo spec\\ salvo",
     "api:gen": "orval --config orval.config.ts",
@@ -20,11 +22,13 @@
     "@tanstack/vue-query": "^5.101.2",
     "@vue-a11y/vlibras": "^1.0.6",
     "axios": "^1.18.1",
+    "livekit-client": "2.22.2",
     "socket.io-client": "^4.8.3",
     "vue": "^3.5.34",
     "vue-router": "^5.1.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@types/node": "^24.12.3",
     "@vitejs/plugin-vue": "^6.0.6",
     "@vitest/coverage-v8": "^4.1.9",

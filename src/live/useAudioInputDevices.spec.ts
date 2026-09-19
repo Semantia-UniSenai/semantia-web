@@ -6,12 +6,14 @@ import {
   useAudioInputDevices,
   type UseAudioInputDevices,
 } from './useAudioInputDevices'
+import type { SharedMicrophoneSource } from './media/shared-microphone-source'
 
 const stopTrack = vi.fn()
 const closeContext = vi.fn().mockResolvedValue(undefined)
 const resumeContext = vi.fn().mockResolvedValue(undefined)
 const disconnectSource = vi.fn()
 const disconnectAnalyser = vi.fn()
+const connectAnalyser = vi.fn()
 const getUserMedia = vi.fn()
 const enumerateDevices = vi.fn()
 let deviceChangeHandler: (() => void) | null = null
@@ -29,10 +31,13 @@ const analyser = {
     buffer[0] = 128 + Math.round(sampleAmplitude * 127)
   },
   disconnect: disconnectAnalyser,
+  connect: connectAnalyser,
 }
+const destination = { kind: 'speaker-output' }
 
 class FakeAudioContext {
   state: AudioContextState = 'running'
+  destination = destination
   createMediaStreamSource = vi.fn(() => source)
   createAnalyser = vi.fn(() => analyser)
   resume = resumeContext
@@ -49,12 +54,12 @@ function device(deviceId: string, label = '', groupId = ''): MediaDeviceInfo {
   }
 }
 
-function mountDevices() {
+function mountDevices(options?: { microphoneSource?: SharedMicrophoneSource }) {
   let api!: UseAudioInputDevices
   const wrapper = mount(
     defineComponent({
       setup() {
-        api = useAudioInputDevices()
+        api = useAudioInputDevices(options)
         return () => null
       },
     }),
@@ -104,6 +109,48 @@ afterEach(() => {
 })
 
 describe('useAudioInputDevices', () => {
+  it('tests through a shared microphone lease instead of a competing capture', async () => {
+    const release = vi.fn()
+    const leaseTrack = { stop: vi.fn() } as unknown as MediaStreamTrack
+    const microphoneSource = {
+      acquire: vi.fn().mockResolvedValue({ track: leaseTrack, release }),
+      reset: vi.fn(),
+      dispose: vi.fn(),
+    }
+    vi.stubGlobal(
+      'MediaStream',
+      class {
+        private readonly tracks: MediaStreamTrack[]
+        constructor(tracks: MediaStreamTrack[]) {
+          this.tracks = tracks
+        }
+        getTracks() {
+          return this.tracks
+        }
+      },
+    )
+    const { api } = mountDevices({ microphoneSource })
+
+    await api.startTest()
+    await api.stopTest()
+
+    expect(microphoneSource.acquire).toHaveBeenCalledWith('default')
+    expect(getUserMedia).not.toHaveBeenCalled()
+    expect(release).toHaveBeenCalledTimes(1)
+    expect(leaseTrack.stop).not.toHaveBeenCalled()
+  })
+
+  it('reproduces the selected microphone locally only when monitoring is explicit', async () => {
+    const { api } = mountDevices()
+
+    await api.startTest(true)
+
+    expect(connectAnalyser).toHaveBeenCalledWith(destination)
+    expect(api.testMonitorEnabled.value).toBe(true)
+    await api.stopTest()
+    expect(api.testMonitorEnabled.value).toBe(false)
+  })
+
   it('solicita permissão, lista apenas entradas com labels e libera a stream temporária', async () => {
     const { api } = mountDevices()
 

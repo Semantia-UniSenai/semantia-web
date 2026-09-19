@@ -29,12 +29,17 @@ function mockPipeline() {
   })
   const backendAddAudio = vi.fn()
   let captureAudio: ((samples: Float32Array, sampleRate: number) => void) | undefined
+  let captureMicrophoneSource: unknown
   let backendPublish: ((segment: unknown) => Promise<{ ok: boolean }>) | undefined
 
   vi.doMock('./usePcmAudioCapture', () => ({
     usePcmAudioCapture: vi.fn(
-      (options: { onAudioChunk: (samples: Float32Array, sampleRate: number) => void }) => {
+      (options: {
+        onAudioChunk: (samples: Float32Array, sampleRate: number) => void
+        microphoneSource?: unknown
+      }) => {
         captureAudio = options.onAudioChunk
+        captureMicrophoneSource = options.microphoneSource
         return {
           supported: true,
           listening: captureListening,
@@ -74,10 +79,28 @@ function mockPipeline() {
     emitAudio: (samples: Float32Array, sampleRate: number) =>
       captureAudio?.(samples, sampleRate),
     publishBackendAudio: (segment: unknown) => backendPublish?.(segment),
+    getCaptureMicrophoneSource: () => captureMicrophoneSource,
   }
 }
 
 describe('useMeetingTranscription', () => {
+  it('passes the shared microphone source to PCM capture', async () => {
+    const pipeline = mockPipeline()
+    const microphoneSource = {
+      acquire: vi.fn(),
+      reset: vi.fn(),
+      dispose: vi.fn(),
+    }
+    const { useMeetingTranscription } = await import('./useMeetingTranscription')
+
+    useMeetingTranscription({
+      microphoneSource,
+      onAudioSegment: vi.fn().mockResolvedValue({ ok: true }),
+    })
+
+    expect(pipeline.getCaptureMicrophoneSource()).toBe(microphoneSource)
+  })
+
   it('captures only PCM and delegates all text recognition to backend ASR', async () => {
     const pipeline = mockPipeline()
     const onAudioSegment = vi.fn().mockResolvedValue({ ok: true })

@@ -59,6 +59,11 @@ const latestFinalAnnouncement = computed(() => {
   const last = props.transcript.at(-1)
   return last ? resolveText(last).trim() : ''
 })
+const emptyMessage = computed(() =>
+  props.captionState === 'paused'
+    ? 'Ative a transcrição para começar a gerar legendas.'
+    : 'Aguardando o comunicador falar…',
+)
 
 const FONT_KEY = 'semantia.captions.font'
 const FONT_STEPS = [28, 36, 48]
@@ -188,7 +193,7 @@ watch(
       @scroll.passive="onScroll"
     >
       <p v-if="lines.length === 0" class="captions__waiting">
-        Aguardando o comunicador falar…
+        {{ emptyMessage }}
       </p>
       <template v-else>
         <transition-group name="line" tag="div" class="captions__lines">
