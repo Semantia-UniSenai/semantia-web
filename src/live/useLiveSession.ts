@@ -87,9 +87,7 @@ function normalizeTranscriptEntry(entry: SocketTranscriptEntry): TranscriptEntry
       entry.cleaningStrategyVersion ?? 'legacy-unversioned',
     confidence: entry.confidence ?? null,
     createdAt: entry.createdAt ?? entry.at ?? '',
-    ...(entry.adaptation !== undefined
-      ? { adaptation: entry.adaptation }
-      : {}),
+    ...(entry.adaptation !== undefined ? { adaptation: entry.adaptation } : {}),
   }
 }
 
@@ -136,7 +134,7 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
   const pendingAudioCount = ref(0)
   const transcriptionStatus = ref<BackendTranscriptionStatus | null>(null)
   const admissionQueue = ref<AdmissionEntry[]>([])
-  const admissionStatus = ref<'none' | 'waiting' | 'denied'>('none')
+  const admissionStatus = ref<'none' | 'waiting' | 'denied' | 'removed'>('none')
   const ended = computed(() => session.value?.status === 'ENDED')
   const canPublishTranscript = computed(() => role.value === 'HOST' && !ended.value)
   const joined = computed(() => !!session.value && status.value === 'connected')
@@ -208,6 +206,9 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
     })
     next.on('admission:denied', () => {
       admissionStatus.value = 'denied'
+    })
+    next.on('participant:removed', () => {
+      admissionStatus.value = 'removed'
     })
     next.on('admission:request', (entry: AdmissionEntry) => {
       admissionQueue.value = [
@@ -573,6 +574,9 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
     emitAck('hand:lower-for', { participantId })
   const endSession = () => emitAck('session:end')
 
+  const removeParticipant = (participantId: string) =>
+    emitAck('participant:remove', { participantId })
+
   function requestMediaCredentials(): Promise<Ack<MediaCredentials>> {
     if (!joinedSocket) {
       const error = {
@@ -651,5 +655,6 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
     admissionStatus,
     approveAdmission,
     rejectAdmission,
+    removeParticipant,
   }
 }

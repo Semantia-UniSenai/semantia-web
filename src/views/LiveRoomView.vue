@@ -50,6 +50,18 @@ let panelMediaQuery: MediaQueryList | null = null
 let restoreConferenceMicrophoneAfterTest = false
 let restoreConferenceCameraAfterTest = false
 
+const confirmRemoveId = ref<string | null>(null)
+const removingId = ref<string | null>(null)
+const confirmDialogRef = ref<HTMLElement | null>(null)
+const confirmCancelButton = ref<HTMLButtonElement | null>(null)
+let removeTriggerElement: HTMLButtonElement | null = null
+
+const showAdmissionBanner = computed(
+  () => live.canManage.value && live.admissionQueue.value.length > 0 && panel.value !== 'participants',
+)
+const admissionNewArrival = ref(false)
+let admissionArrivalTimer: ReturnType<typeof setTimeout> | null = null
+
 const audioInput = useAudioInputDevices({ microphoneSource })
 const videoInput = useVideoInputDevices()
 const transcription = useMeetingTranscription({
@@ -93,11 +105,21 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   panelMediaQuery?.removeEventListener('change', syncPanelMode)
+  if (admissionArrivalTimer !== null) clearTimeout(admissionArrivalTimer)
   restoreConferenceMicrophoneAfterTest = false
   restoreConferenceCameraAfterTest = false
   void audioInput.stopTest()
   void videoInput.stopTest()
   microphoneSource.dispose()
+})
+watch(() => live.admissionQueue.value.length, (newLen, oldLen) => {
+  if (newLen > (oldLen ?? 0) && newLen > 0) {
+    admissionNewArrival.value = false
+    void nextTick(() => {
+      admissionNewArrival.value = true
+      admissionArrivalTimer = window.setTimeout(() => { admissionNewArrival.value = false }, 2500)
+    })
+  }
 })
 watch(() => live.ended.value, (ended) => {
   if (ended) {
@@ -350,6 +372,54 @@ function syncPanelMode() {
   isCompactPanel.value = panelMediaQuery?.matches ?? false
 }
 
+function participantName(participantId: string | null): string {
+  if (!participantId) return ''
+  return live.participants.value.find(p => p.participantId === participantId)?.name ?? ''
+}
+
+function openConfirmRemove(participantId: string, event: MouseEvent) {
+  removeTriggerElement = event.currentTarget as HTMLButtonElement
+  confirmRemoveId.value = participantId
+}
+
+function closeConfirmRemove() {
+  confirmRemoveId.value = null
+  void nextTick(() => removeTriggerElement?.focus())
+}
+
+async function doRemove() {
+  const id = confirmRemoveId.value
+  if (!id) return
+  confirmRemoveId.value = null
+  removingId.value = id
+  await live.removeParticipant(id)
+  removingId.value = null
+}
+
+function trapDialogFocus(event: KeyboardEvent) {
+  if (!confirmDialogRef.value) return
+  const focusable = Array.from(
+    confirmDialogRef.value.querySelectorAll<HTMLElement>('button:not([disabled])'),
+  )
+  if (focusable.length < 2) return
+  const first = focusable[0]!
+  const last = focusable[focusable.length - 1]!
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+watch(confirmRemoveId, async (id) => {
+  if (id) {
+    await nextTick()
+    confirmCancelButton.value?.focus()
+  }
+})
+
 function trapPanelFocus(event: KeyboardEvent) {
   if (!isCompactPanel.value || !panelElement.value) return
   const focusable = Array.from(
@@ -395,6 +465,41 @@ function trapPanelFocus(event: KeyboardEvent) {
       <button type="button" class="ghost" @click="live.disconnect(); $router.push('/')">Fechar</button>
     </div>
   </div>
+
+  <div v-if="live.admissionStatus.value === 'removed'" class="admission-overlay admission-overlay--denied" role="alert">
+    <div class="admission-overlay__card">
+      <svg aria-hidden="true" viewBox="0 0 24 24" class="admission-overlay__icon"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+      <h2>Você foi removido da sala</h2>
+      <p>O anfitrião encerrou sua participação nesta reunião.</p>
+      <button type="button" class="ghost" @click="live.disconnect(); $router.push('/')">Fechar</button>
+    </div>
+  </div>
+  <div
+    v-if="confirmRemoveId !== null"
+    class="confirm-dialog-backdrop"
+    role="presentation"
+    @click.self="closeConfirmRemove"
+    @keydown.esc.prevent="closeConfirmRemove"
+    @keydown.tab.prevent="trapDialogFocus"
+  >
+    <div
+      ref="confirmDialogRef"
+      class="confirm-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="confirm-remove-title"
+    >
+      <h3 id="confirm-remove-title" class="confirm-dialog__title">Remover participante?</h3>
+      <p class="confirm-dialog__body">
+        <strong>{{ participantName(confirmRemoveId) }}</strong> será desconectado da sala e não poderá retornar diretamente.
+      </p>
+      <div class="confirm-dialog__actions">
+        <button ref="confirmCancelButton" type="button" class="ghost" @click="closeConfirmRemove">Cancelar</button>
+        <button type="button" class="danger" @click="doRemove">Remover</button>
+      </div>
+    </div>
+  </div>
+
   <main class="room" :class="{ 'room--panel-open': panel }">
     <a class="skip-link" href="#captions-main">Ir para a legenda</a>
     <header class="topbar" :inert="isCompactPanel && !!panel">
@@ -451,6 +556,19 @@ function trapPanelFocus(event: KeyboardEvent) {
         {{ live.session.value ? 'Reconectando à reunião segura…' : 'Conectando à reunião segura…' }}
       </div>
       <div v-if="live.ended.value" class="ended-banner" role="status">Reunião encerrada. O conteúdo está disponível somente para leitura conforme a retenção configurada.</div>
+
+      <div
+        v-if="showAdmissionBanner"
+        class="admission-banner"
+        :class="{ 'admission-banner--new': admissionNewArrival }"
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>{{ live.admissionQueue.value.length === 1 ? '1 pessoa aguardando aprovação' : `${live.admissionQueue.value.length} pessoas aguardando aprovação` }}</span>
+        <button type="button" class="admission-banner__btn" @click="togglePanel('participants')">Ver</button>
+      </div>
 
       <div class="workspace" :class="{ 'workspace--panel-open': panel }">
         <section
@@ -513,12 +631,22 @@ function trapPanelFocus(event: KeyboardEvent) {
             @approve="live.approveAdmission"
             @reject="live.rejectAdmission"
           />
-          <div class="people">
-            <article v-for="participant in live.participants.value" :key="participant.participantId">
+          <div class="people" role="list" aria-label="Participantes na reunião" aria-live="polite">
+            <article v-for="participant in live.participants.value" :key="participant.participantId" role="listitem">
               <span class="avatar">{{ participant.name.charAt(0).toUpperCase() }}</span>
               <div><strong>{{ participant.participantId === live.currentParticipantId.value ? 'Você' : participant.name }}</strong><small>{{ participant.role === 'HOST' ? 'Anfitrião' : participant.role === 'MODERATOR' ? 'Moderador' : participant.role === 'GUEST' ? 'Convidado' : 'Participante' }}</small></div>
               <button v-if="live.canManage.value && live.raisedHands.value.some((hand) => hand.participantId === participant.participantId)" type="button" @click="live.lowerParticipantHand(participant.participantId)">✋ Baixar</button>
               <span v-else-if="live.raisedHands.value.some((hand) => hand.participantId === participant.participantId)" class="raised">✋</span>
+              <button
+                v-if="live.canManage.value && participant.participantId !== live.currentParticipantId.value && participant.role !== 'HOST'"
+                type="button"
+                class="remove-btn"
+                :class="{ 'remove-btn--loading': removingId === participant.participantId }"
+                :disabled="removingId === participant.participantId"
+                :aria-label="`Remover ${participant.name} da sala`"
+                :aria-busy="removingId === participant.participantId ? 'true' : undefined"
+                @click="openConfirmRemove(participant.participantId, $event)"
+              >{{ removingId === participant.participantId ? '…' : 'Remover' }}</button>
             </article>
           </div>
           </template>
@@ -840,6 +968,62 @@ function trapPanelFocus(event: KeyboardEvent) {
   color: #10232f;
   background: linear-gradient(135deg, #7bd5d8, #90aeea);
 }
+.remove-btn {
+  margin-left: auto;
+  padding: 5px 10px;
+  border: 1px solid rgba(231, 88, 110, 0.25);
+  border-radius: 8px;
+  background: rgba(231, 88, 110, 0.06);
+  color: #c0394f;
+  font: 700 11px var(--display, inherit);
+  cursor: pointer;
+}
+.remove-btn:hover {
+  background: rgba(231, 88, 110, 0.14);
+  border-color: rgba(231, 88, 110, 0.5);
+}
+.remove-btn--loading {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.confirm-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(6px);
+}
+.confirm-dialog {
+  width: min(400px, 100%);
+  padding: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  background: #141c2e;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  color: var(--meeting-text);
+  animation: meeting-sheet-in 0.18s ease-out;
+}
+.confirm-dialog__title {
+  margin: 0 0 10px;
+  font: 700 18px var(--display);
+}
+.confirm-dialog__body {
+  margin: 0 0 22px;
+  font-size: 13px;
+  color: var(--meeting-muted);
+  line-height: 1.5;
+}
+.confirm-dialog__body strong {
+  color: var(--meeting-text);
+}
+.confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
 .control-bar {
   position: relative;
   z-index: 10;
@@ -964,6 +1148,65 @@ function trapPanelFocus(event: KeyboardEvent) {
   border-color: rgba(157, 172, 201, 0.28);
   color: #dbe3f5;
   background: rgba(40, 51, 72, 0.96);
+}
+.admission-banner {
+  position: absolute;
+  z-index: 20;
+  top: 78px;
+  left: 50%;
+  width: min(480px, calc(100vw - 32px));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px 10px 14px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 193, 87, 0.38);
+  border-radius: 14px;
+  color: #ffe9a0;
+  background: rgba(62, 40, 5, 0.96);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(8px);
+  animation: meeting-sheet-in 0.18s ease-out;
+}
+.admission-banner svg {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  color: #ffc657;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.admission-banner span {
+  flex: 1;
+  font: 650 12px var(--body, inherit);
+  line-height: 1.3;
+}
+.admission-banner__btn {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid rgba(255, 193, 87, 0.35);
+  border-radius: 8px;
+  color: #ffe9a0;
+  background: rgba(255, 193, 87, 0.12);
+  font: 750 11px var(--display, inherit);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s ease;
+}
+.admission-banner__btn:hover {
+  background: rgba(255, 193, 87, 0.24);
+}
+.admission-banner--new {
+  animation: meeting-sheet-in 0.18s ease-out, admission-ring 0.55s ease-out;
+}
+@keyframes admission-ring {
+  0%   { box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36); }
+  35%  { box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36), 0 0 0 5px rgba(255, 193, 87, 0.35); }
+  100% { box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36), 0 0 0 8px rgba(255, 193, 87, 0); }
 }
 .fatal {
   grid-row: 2 / 4;
@@ -1157,6 +1400,9 @@ function trapPanelFocus(event: KeyboardEvent) {
 
 @media (prefers-reduced-motion: reduce) {
   .side,
+  .confirm-dialog,
+  .admission-banner,
+  .admission-banner--new,
   .status.reconnecting i {
     animation: none;
   }

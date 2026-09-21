@@ -45,37 +45,7 @@ interface CaptionLine {
   text: string
 }
 
-type CaptionMode = 'literal' | 'adapted'
-
 const MODE_KEY = 'semantia.captions.mode'
-const savedCaptionMode = localStorage.getItem(MODE_KEY)
-const captionMode = ref<CaptionMode>(savedCaptionMode === 'adapted' ? 'adapted' : 'literal')
-const displayedTranscript = computed(() =>
-  props.transcript.map((entry) => ({
-    ...entry,
-    text:
-      captionMode.value === 'adapted' && entry.adaptation?.status === 'succeeded'
-        ? entry.adaptation.text
-        : entry.text,
-  })),
-)
-const lines = computed<CaptionLine[]>(() =>
-  displayedTranscript.value.flatMap((entry) =>
-    splitIntoLines(entry.text).map((text, i) => ({
-      key: `${entry.seq}:${i}`,
-      text,
-    })),
-  ),
-)
-const latestFinalAnnouncement = computed(
-  () => displayedTranscript.value.at(-1)?.text.trim() ?? '',
-)
-const emptyMessage = computed(() =>
-  props.captionState === 'paused'
-    ? 'Ative a transcrição para começar a gerar legendas.'
-    : 'Aguardando o comunicador falar…',
-)
-
 const FONT_KEY = 'semantia.captions.font'
 const FONT_STEPS = [28, 36, 48]
 const DEFAULT_STEP = 1
@@ -83,22 +53,55 @@ const DEFAULT_STEP = 1
 const fontStep = ref(DEFAULT_STEP)
 const stage = ref<HTMLElement | null>(null)
 const pinned = ref(true)
+const preferAdapted = ref(false)
+
+const hasAnyAdaptation = computed(() =>
+  props.transcript.some((e) => e.adaptation?.status === 'succeeded'),
+)
+
+function resolveText(entry: TranscriptEntry): string {
+  if (preferAdapted.value && entry.adaptation?.status === 'succeeded') {
+    return entry.adaptation.text
+  }
+  return entry.text
+}
+
+function toggleMode() {
+  preferAdapted.value = !preferAdapted.value
+  localStorage.setItem(MODE_KEY, preferAdapted.value ? 'adapted' : 'literal')
+}
+
+const lines = computed<CaptionLine[]>(() =>
+  props.transcript.flatMap((entry) =>
+    splitIntoLines(resolveText(entry)).map((text, i) => ({
+      key: `${entry.seq}:${i}`,
+      text,
+    })),
+  ),
+)
+
+const latestFinalAnnouncement = computed(() => {
+  const last = props.transcript.at(-1)
+  return last ? resolveText(last).trim() : ''
+})
+
+const emptyMessage = computed(() =>
+  props.captionState === 'paused'
+    ? 'Ative a transcrição para começar a gerar legendas.'
+    : 'Aguardando o comunicador falar…',
+)
 
 onMounted(() => {
-  const savedValue = localStorage.getItem(FONT_KEY)
-  if (savedValue !== null) {
-    const saved = Number(savedValue)
+  const savedFont = localStorage.getItem(FONT_KEY)
+  if (savedFont !== null) {
+    const saved = Number(savedFont)
     if (Number.isInteger(saved) && saved >= 0 && saved < FONT_STEPS.length) {
       fontStep.value = saved
     }
   }
+  preferAdapted.value = localStorage.getItem(MODE_KEY) === 'adapted'
   scrollToLive('auto')
 })
-
-function setCaptionMode(mode: CaptionMode) {
-  captionMode.value = mode
-  localStorage.setItem(MODE_KEY, mode)
-}
 
 function setFont(delta: number) {
   const next = fontStep.value + delta
@@ -122,7 +125,7 @@ function scrollToLive(behavior: ScrollBehavior = 'smooth') {
 
 // Segue o vivo enquanto o leitor estiver no fim (não rouba a rolagem de quem relê).
 watch(
-  () => [props.transcript.length, captionMode.value],
+  () => [props.transcript.length, preferAdapted.value],
   async () => {
     if (!pinned.value) return
     await nextTick()
@@ -150,42 +153,36 @@ watch(
           <small>{{ captionStatus.detail }}</small>
         </span>
       </span>
-      <div class="captions__mode" role="group" aria-label="Versão da legenda">
+      <div class="captions__controls">
         <button
+          v-if="hasAnyAdaptation"
           type="button"
-          data-caption-mode="literal"
-          :aria-pressed="captionMode === 'literal'"
-          @click="setCaptionMode('literal')"
+          class="captions__mode-toggle"
+          :class="{ 'captions__mode-toggle--active': preferAdapted }"
+          :aria-pressed="preferAdapted"
+          :aria-label="preferAdapted ? 'Usando texto adaptado — clique para literal' : 'Usando texto literal — clique para adaptado'"
+          @click="toggleMode"
         >
-          Literal
+          {{ preferAdapted ? 'Adaptado' : 'Literal' }}
         </button>
-        <button
-          type="button"
-          data-caption-mode="adapted"
-          :aria-pressed="captionMode === 'adapted'"
-          title="Usa o texto literal quando a adaptação não estiver disponível"
-          @click="setCaptionMode('adapted')"
-        >
-          Adaptado
-        </button>
-      </div>
-      <div class="captions__font" role="group" aria-label="Tamanho do texto">
-        <button
-          type="button"
-          :disabled="fontStep === 0"
-          aria-label="Diminuir texto"
-          @click="setFont(-1)"
-        >
-          A−
-        </button>
-        <button
-          type="button"
-          :disabled="fontStep === FONT_STEPS.length - 1"
-          aria-label="Aumentar texto"
-          @click="setFont(1)"
-        >
-          A+
-        </button>
+        <div class="captions__font" role="group" aria-label="Tamanho do texto">
+          <button
+            type="button"
+            :disabled="fontStep === 0"
+            aria-label="Diminuir texto"
+            @click="setFont(-1)"
+          >
+            A−
+          </button>
+          <button
+            type="button"
+            :disabled="fontStep === FONT_STEPS.length - 1"
+            aria-label="Aumentar texto"
+            @click="setFont(1)"
+          >
+            A+
+          </button>
+        </div>
       </div>
     </div>
 
@@ -275,19 +272,30 @@ watch(
     opacity: 0.35;
   }
 }
+.captions__controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.captions__mode-toggle {
+  padding: 6px 14px;
+  border: 1px solid var(--night-line);
+  border-radius: 9px;
+  background: var(--night-2);
+  color: var(--on-night);
+  font: inherit;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+.captions__mode-toggle:hover {
+  border-color: var(--blue);
+  color: #fff;
+}
 .captions__font {
   display: inline-flex;
   gap: 6px;
 }
-.captions__mode {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--night-line);
-  border-radius: 10px;
-  background: var(--night-2);
-}
-.captions__mode button,
 .captions__font button {
   padding: 6px 12px;
   border: 1px solid var(--night-line);
@@ -299,15 +307,6 @@ watch(
   font-size: 13px;
   cursor: pointer;
 }
-.captions__mode button {
-  border-color: transparent;
-  background: transparent;
-}
-.captions__mode button[aria-pressed='true'] {
-  background: var(--brand);
-  color: #fff;
-}
-.captions__mode button:focus-visible,
 .captions__font button:focus-visible {
   outline: 2px solid #fff;
   outline-offset: 2px;
@@ -461,6 +460,30 @@ watch(
   box-shadow: 0 0 0 4px rgba(85, 219, 168, 0.1);
   animation: pulse 1.6s ease-in-out infinite;
 }
+.captions__controls {
+  gap: 10px;
+}
+.captions__mode-toggle {
+  min-height: 44px;
+  padding: 0 16px;
+  border-color: rgba(198, 214, 245, 0.14);
+  border-radius: 13px;
+  color: #8e9bb6;
+  background: rgba(255, 255, 255, 0.055);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.captions__mode-toggle:hover {
+  border-color: rgba(98, 201, 204, 0.5);
+  color: #dce5f8;
+}
+.captions__mode-toggle--active {
+  border-color: rgba(98, 201, 204, 0.45);
+  color: #62c9cc;
+  background: rgba(98, 201, 204, 0.08);
+}
 .captions__font {
   gap: 7px;
 }
@@ -560,11 +583,8 @@ watch(
   .captions__label {
     flex: 1 1 100%;
   }
-  .captions__mode {
+  .captions__controls {
     flex: 1 1 auto;
-  }
-  .captions__mode button {
-    flex: 1;
   }
   .captions__label small {
     max-width: 54vw;
