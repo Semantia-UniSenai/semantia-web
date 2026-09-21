@@ -5,6 +5,7 @@
  * Accessible real-time communication rooms with live transcription.
  * OpenAPI spec version: 1.0.0
  */
+import type { TranscriptSegmentAdaptationDto } from './transcriptSegmentAdaptationDto';
 
 export interface TranscriptSegmentDto {
   id: string;
@@ -12,5 +13,7 @@ export interface TranscriptSegmentDto {
   seq: number;
   text: string;
   cleaningStrategyVersion: string;
+  /** @nullable */
+  adaptation?: TranscriptSegmentAdaptationDto | null;
   createdAt: string;
 }

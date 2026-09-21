@@ -2,13 +2,20 @@
 import { reactive, ref } from 'vue'
 import type { AudienceContext } from '../../api/sessions-context'
 
+withDefaults(
+  defineProps<{
+    saving?: boolean
+    saveError?: string | null
+  }>(),
+  { saving: false, saveError: null },
+)
+
 const emit = defineEmits<{
   submit: [payload: { context: AudienceContext; requiresApproval: boolean }]
   skip: []
 }>()
 
-const saving = ref(false)
-const error = ref<string | null>(null)
+const fieldError = ref<string | null>(null)
 const requiresApproval = ref(false)
 
 const form = reactive<AudienceContext>({
@@ -19,28 +26,23 @@ const form = reactive<AudienceContext>({
   simplificationLevel: 'moderada',
 })
 
-async function submit() {
+function submit() {
   if (!form.domain.trim()) {
-    error.value = 'Informe o assunto ou domínio da reunião.'
+    fieldError.value = 'Informe o assunto ou domínio da reunião.'
     return
   }
-  error.value = null
-  saving.value = true
-  try {
-    emit('submit', {
-      context: { ...form, domain: form.domain.trim() },
-      requiresApproval: requiresApproval.value,
-    })
-  } finally {
-    saving.value = false
-  }
+  fieldError.value = null
+  emit('submit', {
+    context: { ...form, domain: form.domain.trim() },
+    requiresApproval: requiresApproval.value,
+  })
 }
 </script>
 
 <template>
   <div class="context-form" role="region" aria-label="Configuração da plateia">
     <div class="context-form__inner">
-      <h2 class="context-form__title">Configure a plateia</h2>
+      <h2 class="context-form__title" style="color: #f4f7ff">Configure a plateia</h2>
       <p class="context-form__desc">
         Essas informações orientam o agente de IA ao adaptar a transcrição. Você pode pular e
         configurar depois, mas a adaptação ficará mais precisa com o contexto preenchido.
@@ -89,11 +91,11 @@ async function submit() {
             maxlength="200"
             placeholder="Ex.: Matemática — equações do 2º grau"
             aria-required="true"
-            :aria-invalid="!!error"
-            :aria-describedby="error ? 'ctx-domain-error' : undefined"
+            :aria-invalid="!!fieldError"
+            :aria-describedby="fieldError ? 'ctx-domain-error' : undefined"
           />
-          <span v-if="error" id="ctx-domain-error" class="field__error" role="alert">
-            {{ error }}
+          <span v-if="fieldError" id="ctx-domain-error" class="field__error" role="alert">
+            {{ fieldError }}
           </span>
         </div>
 
@@ -127,6 +129,10 @@ async function submit() {
           </div>
         </div>
 
+        <p v-if="saveError" class="context-form__save-error" role="alert">
+          {{ saveError }}
+        </p>
+
         <div class="context-form__actions">
           <button type="button" class="btn-ghost" @click="emit('skip')">
             Pular por enquanto
@@ -148,18 +154,31 @@ async function submit() {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 16px;
+  padding:
+    max(16px, env(safe-area-inset-top))
+    max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
   background: rgba(10, 14, 28, 0.85);
   backdrop-filter: blur(6px);
 }
 
 .context-form__inner {
+  box-sizing: border-box;
   width: min(540px, 100%);
+  max-height: calc(100vh - 32px);
+  max-height: calc(
+    100dvh - max(16px, env(safe-area-inset-top)) -
+      max(16px, env(safe-area-inset-bottom))
+  );
   padding: 32px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 20px;
   background: #161e32;
   color: #dce4fa;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .context-form__title {
@@ -214,6 +233,13 @@ async function submit() {
 .field__error {
   font-size: 0.8125rem;
   color: #ff9aac;
+}
+
+.context-form__save-error {
+  margin: 0;
+  color: #ffb1bf;
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
 .required {

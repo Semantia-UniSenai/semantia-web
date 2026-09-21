@@ -3,8 +3,6 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { splitIntoLines } from '../../live/captionLines'
 import type { TranscriptEntry } from '../../live/types'
 
-const MODE_KEY = 'semantia.captions.mode'
-
 /**
  * Palco de texto ao vivo — o coração da experiência acessível da plateia.
  * Estilo karaokê: cada frase vira uma ou mais linhas curtas que descem na
@@ -47,24 +45,7 @@ interface CaptionLine {
   text: string
 }
 
-const lines = computed<CaptionLine[]>(() =>
-  props.transcript.flatMap((entry) =>
-    splitIntoLines(resolveText(entry)).map((text, i) => ({
-      key: `${entry.seq}:${i}`,
-      text,
-    })),
-  ),
-)
-const latestFinalAnnouncement = computed(() => {
-  const last = props.transcript.at(-1)
-  return last ? resolveText(last).trim() : ''
-})
-const emptyMessage = computed(() =>
-  props.captionState === 'paused'
-    ? 'Ative a transcrição para começar a gerar legendas.'
-    : 'Aguardando o comunicador falar…',
-)
-
+const MODE_KEY = 'semantia.captions.mode'
 const FONT_KEY = 'semantia.captions.font'
 const FONT_STEPS = [28, 36, 48]
 const DEFAULT_STEP = 1
@@ -89,6 +70,26 @@ function toggleMode() {
   preferAdapted.value = !preferAdapted.value
   localStorage.setItem(MODE_KEY, preferAdapted.value ? 'adapted' : 'literal')
 }
+
+const lines = computed<CaptionLine[]>(() =>
+  props.transcript.flatMap((entry) =>
+    splitIntoLines(resolveText(entry)).map((text, i) => ({
+      key: `${entry.seq}:${i}`,
+      text,
+    })),
+  ),
+)
+
+const latestFinalAnnouncement = computed(() => {
+  const last = props.transcript.at(-1)
+  return last ? resolveText(last).trim() : ''
+})
+
+const emptyMessage = computed(() =>
+  props.captionState === 'paused'
+    ? 'Ative a transcrição para começar a gerar legendas.'
+    : 'Aguardando o comunicador falar…',
+)
 
 onMounted(() => {
   const savedFont = localStorage.getItem(FONT_KEY)
@@ -124,7 +125,7 @@ function scrollToLive(behavior: ScrollBehavior = 'smooth') {
 
 // Segue o vivo enquanto o leitor estiver no fim (não rouba a rolagem de quem relê).
 watch(
-  () => props.transcript.length,
+  () => [props.transcript.length, preferAdapted.value],
   async () => {
     if (!pinned.value) return
     await nextTick()
@@ -305,6 +306,10 @@ watch(
   font-weight: 700;
   font-size: 13px;
   cursor: pointer;
+}
+.captions__font button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
 }
 .captions__font button:hover:not(:disabled) {
   border-color: var(--blue);
@@ -573,6 +578,13 @@ watch(
   .captions__tools {
     min-height: 60px;
     padding: 8px 10px 8px 14px;
+    flex-wrap: wrap;
+  }
+  .captions__label {
+    flex: 1 1 100%;
+  }
+  .captions__controls {
+    flex: 1 1 auto;
   }
   .captions__label small {
     max-width: 54vw;

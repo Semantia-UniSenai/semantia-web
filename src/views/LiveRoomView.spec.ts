@@ -1,5 +1,5 @@
 import { computed, ref } from 'vue'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type {
@@ -37,6 +37,12 @@ const routerMocks = vi.hoisted(() => ({
   },
 }))
 const switchSharedMicrophoneDeviceMock = vi.hoisted(() => vi.fn())
+const sessionContextMocks = vi.hoisted(() => ({
+  updateSessionContext: vi.fn(),
+  patchSessionSettings: vi.fn(),
+}))
+
+vi.mock('../api/sessions-context', () => sessionContextMocks)
 
 vi.mock('vue-router', () => ({
   RouterLink: {
@@ -189,8 +195,8 @@ function createVideoMock() {
     testStream: ref<MediaStream | null>(null),
     refresh: vi.fn(),
     selectDevice: vi.fn(),
-    startTest: vi.fn(),
-    stopTest: vi.fn(),
+    startTest: vi.fn().mockResolvedValue(undefined),
+    stopTest: vi.fn().mockResolvedValue(undefined),
   }
 }
 
@@ -251,7 +257,8 @@ function mountRoom() {
         },
         MicControl: {
           emits: ['start', 'stop'],
-          template: '<div data-testid="mic-control">Transcrição</div>',
+          template:
+            '<button data-testid="mic-control" @click="$emit(\'start\')">Transcrição</button>',
         },
         ConferenceControls: {
           props: [
@@ -294,6 +301,10 @@ beforeEach(() => {
   conferenceMock = createConferenceMock()
   sharedMicrophoneSourceMock = createSharedMicrophoneSourceMock()
   conferenceOptions = null
+  sessionContextMocks.updateSessionContext.mockReset()
+  sessionContextMocks.updateSessionContext.mockResolvedValue({})
+  sessionContextMocks.patchSessionSettings.mockReset()
+  sessionContextMocks.patchSessionSettings.mockResolvedValue({})
   transcriptionOptions = null
   audioInputOptions = undefined
   compactViewport = false
@@ -474,6 +485,72 @@ describe('LiveRoomView accessible stage layout', () => {
     expect(conferenceOptions?.microphoneSource).toBe(sharedMicrophoneSourceMock)
     expect(transcriptionOptions?.microphoneSource).toBe(sharedMicrophoneSourceMock)
     expect(audioInputOptions?.microphoneSource).toBe(sharedMicrophoneSourceMock)
+  })
+
+  it('abre a configuração do agente quando o anfitrião entra sem contexto de plateia', async () => {
+    const wrapper = mountRoom()
+
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[aria-label="Configuração da plateia"]')).toBeTruthy()
+    expect(wrapper.text()).toContain('Configure a plateia')
+    expect(wrapper.get('#ctx-domain')).toBeTruthy()
+  })
+
+  it('não inicia o microfone ao pular a configuração aberta na entrada', async () => {
+    const wrapper = mountRoom()
+    await wrapper.vm.$nextTick()
+
+    await wrapper.get('.context-form .btn-ghost').trigger('click')
+
+    expect(wrapper.find('[aria-label="Configuração da plateia"]').exists()).toBe(false)
+    expect(transcriptionMock.start).not.toHaveBeenCalled()
+  })
+
+  it('mantém o formulário aberto e a captura pausada quando salvar contexto falha', async () => {
+    sessionContextMocks.updateSessionContext.mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mountRoom()
+    await wrapper.vm.$nextTick()
+    await wrapper.get('#ctx-domain').setValue('Planejamento do projeto')
+
+    await wrapper.get('.context-form form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.find('[aria-label="Configuração da plateia"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Não foi possível salvar o contexto. Tente novamente.')
+    expect(liveMock.session.value?.audienceContext).toBeNull()
+    expect(transcriptionMock.start).not.toHaveBeenCalled()
+  })
+
+  it('retoma a captura somente quando a configuração foi aberta pelo clique no microfone', async () => {
+    const wrapper = mountRoom()
+    await wrapper.vm.$nextTick()
+    await wrapper.get('.context-form .btn-ghost').trigger('click')
+
+    await wrapper.get('[data-testid="mic-control"]').trigger('click')
+    expect(wrapper.find('[aria-label="Configuração da plateia"]').exists()).toBe(true)
+
+    await wrapper.get('.context-form .btn-ghost').trigger('click')
+    expect(transcriptionMock.start).toHaveBeenCalledWith('default')
+  })
+
+  it('não abre a configuração para participante ou reunião encerrada', async () => {
+    liveMock.canManage.value = false
+    liveMock.role.value = 'GUEST'
+    const participant = mountRoom()
+    await participant.vm.$nextTick()
+    expect(participant.find('[aria-label="Configuração da plateia"]').exists()).toBe(false)
+    participant.unmount()
+
+    liveMock = createLiveMock()
+    liveMock.session.value = {
+      ...liveMock.session.value!,
+      status: 'ENDED',
+      endedAt: '2026-07-31T13:00:00.000Z',
+    }
+    const ended = mountRoom()
+    await ended.vm.$nextTick()
+    expect(ended.find('[aria-label="Configuração da plateia"]').exists()).toBe(false)
   })
 
   it('encaminha somente segmentos PCM ao backend, sem callbacks textuais no cliente', async () => {
