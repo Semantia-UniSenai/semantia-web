@@ -759,11 +759,13 @@ const statusLabel = computed(() => {
 
   .conference-controls__error {
     position: fixed;
-    top: 72px;
     right: 8px;
-    bottom: auto;
+    bottom: 74px;
     left: 8px;
+    top: auto;
     width: auto;
+    max-height: calc(100svh - 160px);
+    overflow-y: auto;
   }
 }
 </style>
