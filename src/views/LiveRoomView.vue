@@ -62,6 +62,15 @@ const showAdmissionBanner = computed(
 const admissionNewArrival = ref(false)
 let admissionArrivalTimer: ReturnType<typeof setTimeout> | null = null
 
+const chatReadCount = ref(0)
+const unreadChatCount = computed(() => Math.max(0, live.chat.value.length - chatReadCount.value))
+
+const raisedHandNewArrival = ref(false)
+const showRaisedHandBanner = computed(
+  () => live.canManage.value && live.raisedHands.value.length > 0 && panel.value !== 'participants',
+)
+let raisedHandArrivalTimer: ReturnType<typeof setTimeout> | null = null
+
 const mobileOverflowOpen = ref(false)
 
 function openMobileOverflow() {
@@ -120,6 +129,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   panelMediaQuery?.removeEventListener('change', syncPanelMode)
   if (admissionArrivalTimer !== null) clearTimeout(admissionArrivalTimer)
+  if (raisedHandArrivalTimer !== null) clearTimeout(raisedHandArrivalTimer)
   restoreConferenceMicrophoneAfterTest = false
   restoreConferenceCameraAfterTest = false
   void audioInput.stopTest()
@@ -135,6 +145,18 @@ watch(() => live.admissionQueue.value.length, (newLen, oldLen) => {
     })
   }
 })
+watch(() => live.raisedHands.value.length, (newLen, oldLen) => {
+  if (newLen > (oldLen ?? 0) && newLen > 0 && live.canManage.value) {
+    raisedHandNewArrival.value = false
+    void nextTick(() => {
+      raisedHandNewArrival.value = true
+      raisedHandArrivalTimer = window.setTimeout(() => { raisedHandNewArrival.value = false }, 3000)
+    })
+  }
+})
+watch(live.chat, () => {
+  if (panel.value === 'chat') chatReadCount.value = live.chat.value.length
+}, { deep: true })
 watch(() => live.ended.value, (ended) => {
   if (ended) {
     void transcription.stop({ flush: false })
@@ -369,6 +391,7 @@ async function togglePanel(nextPanel: MeetingPanel) {
     closePanel()
     return
   }
+  if (nextPanel === 'chat') chatReadCount.value = live.chat.value.length
   lastPanelTrigger = nextPanel
   panel.value = nextPanel
   await nextTick()
@@ -585,6 +608,18 @@ function trapPanelFocus(event: KeyboardEvent) {
       <div v-if="live.ended.value" class="ended-banner" role="status">Reunião encerrada. O conteúdo está disponível somente para leitura conforme a retenção configurada.</div>
 
       <div
+        v-if="showRaisedHandBanner && raisedHandNewArrival"
+        class="hand-banner"
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+      >
+        <span aria-hidden="true" class="hand-banner__icon">✋</span>
+        <span>{{ live.raisedHands.value.length === 1 ? '1 pessoa pedindo a palavra' : `${live.raisedHands.value.length} pessoas pedindo a palavra` }}</span>
+        <button type="button" class="hand-banner__btn" @click="togglePanel('participants')">Ver</button>
+      </div>
+
+      <div
         v-if="showAdmissionBanner"
         class="admission-banner"
         :class="{ 'admission-banner--new': admissionNewArrival }"
@@ -752,17 +787,22 @@ function trapPanelFocus(event: KeyboardEvent) {
         <button
           ref="chatTrigger"
           class="meeting-control"
+          :class="{ 'meeting-control--notify': unreadChatCount > 0 && panel !== 'chat' }"
           type="button"
           aria-controls="meeting-panel"
           :aria-expanded="panel === 'chat'"
           @click="togglePanel('chat')"
         >
           <span class="control-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4V5Z"/></svg></span>
-          <span class="control-copy"><strong>Chat</strong><small>{{ live.chat.value.length }} {{ live.chat.value.length === 1 ? 'mensagem' : 'mensagens' }}</small></span>
+          <span class="control-copy">
+            <strong>Chat<span v-if="unreadChatCount > 0 && panel !== 'chat'" class="notify-badge">{{ unreadChatCount > 9 ? '9+' : unreadChatCount }}</span></strong>
+            <small>{{ live.chat.value.length }} {{ live.chat.value.length === 1 ? 'mensagem' : 'mensagens' }}</small>
+          </span>
         </button>
         <button
           ref="participantsTrigger"
           class="meeting-control"
+          :class="{ 'meeting-control--notify': live.canManage.value && live.raisedHands.value.length > 0 && panel !== 'participants' }"
           type="button"
           aria-controls="meeting-panel"
           :aria-expanded="panel === 'participants'"
@@ -770,7 +810,7 @@ function trapPanelFocus(event: KeyboardEvent) {
         >
           <span class="control-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M16 20v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 10a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 20v-2a4 4 0 0 0-3-3.87M16 2.13a4 4 0 0 1 0 7.75"/></svg></span>
           <span class="control-copy">
-            <strong>Pessoas<span v-if="live.admissionQueue.value.length > 0" class="admission-badge">{{ live.admissionQueue.value.length }}</span></strong>
+            <strong>Pessoas<span v-if="live.admissionQueue.value.length > 0" class="admission-badge">{{ live.admissionQueue.value.length }}</span><span v-if="live.canManage.value && live.raisedHands.value.length > 0 && panel !== 'participants'" class="notify-badge notify-badge--hand">✋ {{ live.raisedHands.value.length }}</span></strong>
             <small>{{ live.participants.value.length }} na reunião</small>
           </span>
         </button>
@@ -1135,6 +1175,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   background: var(--meeting-surface-raised);
 }
 .control-icon {
+  position: relative;
   width: 42px;
   height: 42px;
   flex: 0 0 auto;
@@ -1144,6 +1185,17 @@ function trapPanelFocus(event: KeyboardEvent) {
   color: #dce5fa;
   background: rgba(255, 255, 255, 0.065);
   font-size: 19px;
+}
+.meeting-control--notify .control-icon::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f0c060;
+  border: 2px solid #11192a;
 }
 .control-copy {
   min-width: 0;
@@ -1606,6 +1658,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   .confirm-dialog,
   .admission-banner,
   .admission-banner--new,
+  .hand-banner,
   .mobile-overflow-sheet,
   .status.reconnecting i {
     animation: none;
@@ -1688,6 +1741,74 @@ function trapPanelFocus(event: KeyboardEvent) {
 }
 .admission-overlay--denied .admission-overlay__icon {
   color: #ff9aac;
+}
+
+/* Notification badge — chat unread / raised hands */
+.notify-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  margin-left: 5px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #f0c060;
+  color: #3a2800;
+  font-size: 9px;
+  font-weight: 850;
+  vertical-align: middle;
+}
+.notify-badge--hand {
+  background: rgba(240, 192, 96, 0.18);
+  color: #f0c060;
+  border: 1px solid rgba(240, 192, 96, 0.4);
+}
+
+/* Raised hand banner */
+.hand-banner {
+  position: absolute;
+  z-index: 20;
+  top: 88px;
+  left: 50%;
+  width: min(420px, calc(100vw - 32px));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px 10px 14px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(240, 192, 96, 0.38);
+  border-radius: 14px;
+  color: #ffe9a0;
+  background: rgba(62, 40, 5, 0.96);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36);
+  backdrop-filter: blur(8px);
+  animation: meeting-sheet-in 0.18s ease-out;
+}
+.hand-banner__icon {
+  flex: 0 0 auto;
+  font-size: 16px;
+  line-height: 1;
+}
+.hand-banner span:nth-child(2) {
+  flex: 1;
+  font: 650 12px var(--body, inherit);
+  line-height: 1.3;
+}
+.hand-banner__btn {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid rgba(240, 192, 96, 0.35);
+  border-radius: 8px;
+  color: #ffe9a0;
+  background: rgba(240, 192, 96, 0.12);
+  font: 750 11px var(--display, inherit);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s ease;
+}
+.hand-banner__btn:hover {
+  background: rgba(240, 192, 96, 0.24);
 }
 
 /* Badge na fila */
