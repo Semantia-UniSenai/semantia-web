@@ -62,6 +62,20 @@ const showAdmissionBanner = computed(
 const admissionNewArrival = ref(false)
 let admissionArrivalTimer: ReturnType<typeof setTimeout> | null = null
 
+const mobileOverflowOpen = ref(false)
+
+function openMobileOverflow() {
+  mobileOverflowOpen.value = true
+}
+function closeMobileOverflow() {
+  mobileOverflowOpen.value = false
+  confirmingEnd.value = false
+}
+async function copyInviteAndClose() {
+  await copyInvite()
+  closeMobileOverflow()
+}
+
 const audioInput = useAudioInputDevices({ microphoneSource })
 const videoInput = useVideoInputDevices()
 const transcription = useMeetingTranscription({
@@ -543,6 +557,19 @@ function trapPanelFocus(event: KeyboardEvent) {
           <span>{{ confirmingEnd ? 'Confirmar encerramento' : 'Encerrar' }}</span>
         </button>
       </div>
+      <button
+        v-if="live.canManage.value && !live.ended.value"
+        class="topbar__overflow"
+        type="button"
+        aria-label="Mais opções da reunião"
+        aria-haspopup="dialog"
+        :aria-expanded="mobileOverflowOpen"
+        @click="openMobileOverflow"
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>
+        </svg>
+      </button>
     </header>
 
     <section v-if="live.joinError.value" class="fatal" role="alert">
@@ -748,6 +775,44 @@ function trapPanelFocus(event: KeyboardEvent) {
           </span>
         </button>
       </nav>
+
+      <div
+        v-if="mobileOverflowOpen && live.canManage.value && !live.ended.value"
+        class="mobile-overflow-backdrop"
+        role="presentation"
+        @click.self="closeMobileOverflow"
+        @keydown.esc.prevent="closeMobileOverflow"
+      >
+        <div
+          class="mobile-overflow-sheet"
+          role="dialog"
+          aria-label="Opções da reunião"
+          aria-modal="true"
+          @keydown.esc.stop="closeMobileOverflow"
+        >
+          <div class="mobile-overflow-sheet__handle" aria-hidden="true"></div>
+          <p class="mobile-overflow-sheet__title">Reunião</p>
+          <button type="button" class="mobile-overflow-sheet__action" @click="copyInviteAndClose">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1.1l2-2A5 5 0 0 0 12 4l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>
+            {{ copied ? 'Link copiado!' : 'Convidar' }}
+          </button>
+          <button
+            type="button"
+            class="mobile-overflow-sheet__action"
+            :class="{ 'mobile-overflow-sheet__action--active': live.session.value?.requiresApproval }"
+            :aria-pressed="live.session.value?.requiresApproval"
+            @click="toggleApproval"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+            {{ live.session.value?.requiresApproval ? 'Aprovação ativa' : 'Sala aberta' }}
+          </button>
+          <button type="button" class="mobile-overflow-sheet__action mobile-overflow-sheet__action--danger" @click="end">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+            {{ confirmingEnd ? 'Confirmar encerramento' : 'Encerrar reunião' }}
+          </button>
+          <button type="button" class="mobile-overflow-sheet__cancel" @click="closeMobileOverflow">Cancelar</button>
+        </div>
+      </div>
     </template>
   </main>
 </template>
@@ -1352,9 +1417,28 @@ function trapPanelFocus(event: KeyboardEvent) {
     border-width: 0;
     border-radius: 0;
   }
+  .topbar__actions {
+    display: none;
+  }
+  .topbar__overflow {
+    display: grid;
+  }
   .control-bar :deep(.mic__btn) {
-    min-width: 112px;
-    padding-inline: 8px;
+    min-width: 44px;
+    width: 44px;
+    padding: 2px;
+    border-radius: 12px;
+    box-shadow: none;
+  }
+  .control-bar :deep(.mic__btn span:not(.mic__pulse)) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .control-bar :deep(.mic__controls) {
+    justify-content: center;
   }
   .control-bar :deep(.mic__device-trigger) {
     width: 44px;
@@ -1380,9 +1464,8 @@ function trapPanelFocus(event: KeyboardEvent) {
 
 @media (max-width: 360px) {
   .control-bar :deep(.mic__btn) {
-    min-width: 96px;
-    padding-inline: 5px;
-    font-size: 10px;
+    min-width: 44px;
+    padding-inline: 2px;
   }
   .control-bar :deep(.mic__device-trigger) {
     width: 44px;
@@ -1391,6 +1474,120 @@ function trapPanelFocus(event: KeyboardEvent) {
     width: 38px;
     height: 38px;
   }
+}
+
+/* Topbar overflow button — hidden on desktop, shown at ≤620px */
+.topbar__overflow {
+  display: none;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--meeting-border);
+  border-radius: 13px;
+  color: var(--meeting-text);
+  background: rgba(255, 255, 255, 0.035);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background-color 0.16s ease;
+}
+.topbar__overflow:hover {
+  border-color: rgba(117, 158, 231, 0.45);
+  background: rgba(117, 158, 231, 0.1);
+}
+.topbar__overflow svg {
+  fill: currentColor;
+  stroke: none;
+  width: 20px;
+  height: 20px;
+}
+
+/* Mobile overflow bottom sheet */
+.mobile-overflow-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(0, 0, 0, 0.52);
+  backdrop-filter: blur(4px);
+}
+.mobile-overflow-sheet {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 71;
+  display: grid;
+  gap: 6px;
+  padding: 4px 12px max(20px, env(safe-area-inset-bottom));
+  border: 1px solid var(--meeting-border);
+  border-bottom: 0;
+  border-radius: 20px 20px 0 0;
+  background: #141e32;
+  box-shadow: 0 -20px 48px rgba(0, 0, 0, 0.48);
+  animation: meeting-sheet-in 0.2s ease-out;
+}
+.mobile-overflow-sheet__handle {
+  width: 40px;
+  height: 4px;
+  margin: 8px auto 2px;
+  border-radius: 999px;
+  background: rgba(202, 216, 244, 0.22);
+}
+.mobile-overflow-sheet__title {
+  padding: 0 4px 2px;
+  color: var(--meeting-muted);
+  font: 750 10px var(--body);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.mobile-overflow-sheet__action {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  border: 1px solid var(--meeting-border);
+  border-radius: 14px;
+  color: var(--meeting-text);
+  background: rgba(255, 255, 255, 0.04);
+  font: 650 13px var(--body);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s ease;
+}
+.mobile-overflow-sheet__action:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+.mobile-overflow-sheet__action svg {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+}
+.mobile-overflow-sheet__action--danger {
+  border-color: rgba(255, 110, 139, 0.3);
+  color: #ffb2c1;
+  background: rgba(255, 110, 139, 0.07);
+}
+.mobile-overflow-sheet__action--danger:hover {
+  background: rgba(255, 110, 139, 0.14);
+}
+.mobile-overflow-sheet__action--active {
+  border-color: rgba(109, 222, 178, 0.35);
+  color: #7fe8c0;
+  background: rgba(109, 222, 178, 0.08);
+}
+.mobile-overflow-sheet__cancel {
+  min-height: 48px;
+  margin-top: 4px;
+  padding: 0 14px;
+  border: 1px solid rgba(202, 216, 244, 0.12);
+  border-radius: 14px;
+  color: var(--meeting-muted);
+  background: rgba(255, 255, 255, 0.03);
+  font: 650 13px var(--body);
+  cursor: pointer;
+  transition: background 0.14s ease;
+}
+.mobile-overflow-sheet__cancel:hover {
+  background: rgba(255, 255, 255, 0.07);
 }
 
 @keyframes meeting-sheet-in {
@@ -1403,6 +1600,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   .confirm-dialog,
   .admission-banner,
   .admission-banner--new,
+  .mobile-overflow-sheet,
   .status.reconnecting i {
     animation: none;
   }
