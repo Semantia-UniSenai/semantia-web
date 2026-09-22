@@ -1285,6 +1285,32 @@ function trapPanelFocus(event: KeyboardEvent) {
   50% { opacity: 0.35; }
 }
 
+/* Topbar overflow button — hidden on desktop, shown at ≤620px */
+.topbar__overflow {
+  display: none;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--meeting-border);
+  border-radius: 13px;
+  color: var(--meeting-text);
+  background: rgba(255, 255, 255, 0.035);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background-color 0.16s ease;
+}
+.topbar__overflow:hover {
+  border-color: rgba(117, 158, 231, 0.45);
+  background: rgba(117, 158, 231, 0.1);
+}
+.topbar__overflow svg {
+  fill: currentColor;
+  stroke: none;
+  width: 20px;
+  height: 20px;
+}
+
 @media (max-width: 1023px) {
   .room {
     grid-template-rows: 62px minmax(0, 1fr) auto;
@@ -1480,32 +1506,6 @@ function trapPanelFocus(event: KeyboardEvent) {
     width: 38px;
     height: 38px;
   }
-}
-
-/* Topbar overflow button — hidden on desktop, shown at ≤620px */
-.topbar__overflow {
-  display: none;
-  width: 44px;
-  height: 44px;
-  place-items: center;
-  padding: 0;
-  border: 1px solid var(--meeting-border);
-  border-radius: 13px;
-  color: var(--meeting-text);
-  background: rgba(255, 255, 255, 0.035);
-  font: inherit;
-  cursor: pointer;
-  transition: border-color 0.16s ease, background-color 0.16s ease;
-}
-.topbar__overflow:hover {
-  border-color: rgba(117, 158, 231, 0.45);
-  background: rgba(117, 158, 231, 0.1);
-}
-.topbar__overflow svg {
-  fill: currentColor;
-  stroke: none;
-  width: 20px;
-  height: 20px;
 }
 
 /* Mobile overflow bottom sheet */
