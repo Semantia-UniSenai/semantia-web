@@ -757,6 +757,19 @@ const statusLabel = computed(() => {
     clip: rect(0 0 0 0);
   }
 
+  .camera-settings-trigger {
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .conference-controls__status--visible {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
   .conference-controls__error {
     position: fixed;
     right: 8px;

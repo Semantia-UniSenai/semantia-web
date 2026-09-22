@@ -1383,6 +1383,10 @@ function trapPanelFocus(event: KeyboardEvent) {
     overflow: hidden;
     clip: rect(0 0 0 0);
   }
+  .control-bar :deep(.mic__quality),
+  .control-bar :deep(.mic__meter) {
+    display: none;
+  }
 }
 
 @media (max-width: 620px) {
@@ -1426,6 +1430,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   .control-bar :deep(.mic__btn) {
     min-width: 44px;
     width: 44px;
+    min-height: 44px;
     padding: 2px;
     border-radius: 12px;
     box-shadow: none;
@@ -1448,6 +1453,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   .hand.meeting-control {
     min-width: 44px;
     min-height: 44px;
+    padding: 2px;
   }
   .control-icon {
     width: 40px;
