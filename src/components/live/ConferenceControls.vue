@@ -111,6 +111,8 @@ async function toggleCameraSettings() {
   closeCameraSettings()
 }
 
+defineExpose({ openSettings: toggleCameraSettings })
+
 function closeLocalTests() {
   if (cameraTestActive.value) emit('stop-camera-test')
   if (microphoneTestActive.value) emit('stop-microphone-test')
@@ -758,8 +760,7 @@ const statusLabel = computed(() => {
   }
 
   .camera-settings-trigger {
-    height: 44px;
-    min-height: 44px;
+    display: none;
   }
 
   .conference-controls__status--visible {

@@ -44,6 +44,7 @@ const panelCloseButton = ref<HTMLButtonElement | null>(null)
 const panelElement = ref<HTMLElement | null>(null)
 const chatTrigger = ref<HTMLButtonElement | null>(null)
 const participantsTrigger = ref<HTMLButtonElement | null>(null)
+const conferenceControlsRef = ref<{ openSettings: () => Promise<void> } | null>(null)
 const isCompactPanel = ref(false)
 let lastPanelTrigger: MeetingPanel = 'chat'
 let panelMediaQuery: MediaQueryList | null = null
@@ -65,10 +66,16 @@ let admissionArrivalTimer: ReturnType<typeof setTimeout> | null = null
 const chatReadCount = ref(0)
 const unreadChatCount = computed(() => Math.max(0, live.chat.value.length - chatReadCount.value))
 
+const handBannerDismissed = ref(false)
 const raisedHandNewArrival = ref(false)
 const showRaisedHandBanner = computed(
-  () => live.canManage.value && live.raisedHands.value.length > 0 && panel.value !== 'participants',
+  () => live.canManage.value && live.raisedHands.value.length > 0 && panel.value !== 'participants' && !handBannerDismissed.value,
 )
+const firstRaisedHandName = computed(() => {
+  const firstHand = live.raisedHands.value[0]
+  if (!firstHand) return ''
+  return live.participants.value.find(p => p.participantId === firstHand.participantId)?.name ?? ''
+})
 let raisedHandArrivalTimer: ReturnType<typeof setTimeout> | null = null
 
 const mobileOverflowOpen = ref(false)
@@ -80,6 +87,12 @@ function closeMobileOverflow() {
   mobileOverflowOpen.value = false
   confirmingEnd.value = false
 }
+async function openMediaSettingsFromOverflow() {
+  closeMobileOverflow()
+  await nextTick()
+  void conferenceControlsRef.value?.openSettings()
+}
+
 async function copyInviteAndClose() {
   await copyInvite()
   closeMobileOverflow()
@@ -146,11 +159,18 @@ watch(() => live.admissionQueue.value.length, (newLen, oldLen) => {
   }
 })
 watch(() => live.raisedHands.value.length, (newLen, oldLen) => {
-  if (newLen > (oldLen ?? 0) && newLen > 0 && live.canManage.value) {
+  if (newLen === 0) {
+    handBannerDismissed.value = false
+    raisedHandNewArrival.value = false
+    return
+  }
+  if (newLen > (oldLen ?? 0) && live.canManage.value) {
+    handBannerDismissed.value = false
     raisedHandNewArrival.value = false
     void nextTick(() => {
       raisedHandNewArrival.value = true
-      raisedHandArrivalTimer = window.setTimeout(() => { raisedHandNewArrival.value = false }, 3000)
+      if (raisedHandArrivalTimer !== null) clearTimeout(raisedHandArrivalTimer)
+      raisedHandArrivalTimer = window.setTimeout(() => { raisedHandNewArrival.value = false }, 2500)
     })
   }
 })
@@ -608,15 +628,21 @@ function trapPanelFocus(event: KeyboardEvent) {
       <div v-if="live.ended.value" class="ended-banner" role="status">Reunião encerrada. O conteúdo está disponível somente para leitura conforme a retenção configurada.</div>
 
       <div
-        v-if="showRaisedHandBanner && raisedHandNewArrival"
+        v-if="showRaisedHandBanner"
         class="hand-banner"
+        :class="{ 'hand-banner--new': raisedHandNewArrival }"
         role="alert"
         aria-live="assertive"
         aria-atomic="true"
       >
         <span aria-hidden="true" class="hand-banner__icon">✋</span>
-        <span>{{ live.raisedHands.value.length === 1 ? '1 pessoa pedindo a palavra' : `${live.raisedHands.value.length} pessoas pedindo a palavra` }}</span>
+        <span>
+          <template v-if="live.raisedHands.value.length === 1 && firstRaisedHandName">{{ firstRaisedHandName }} pedindo a palavra</template>
+          <template v-else-if="live.raisedHands.value.length === 1">1 pessoa pedindo a palavra</template>
+          <template v-else>{{ live.raisedHands.value.length }} pessoas pedindo a palavra</template>
+        </span>
         <button type="button" class="hand-banner__btn" @click="togglePanel('participants')">Ver</button>
+        <button type="button" class="hand-banner__close" aria-label="Fechar" @click="handBannerDismissed = true">✕</button>
       </div>
 
       <div
@@ -722,6 +748,7 @@ function trapPanelFocus(event: KeyboardEvent) {
       >
         <ConferenceControls
           v-if="live.session.value && !live.ended.value"
+          ref="conferenceControlsRef"
           :media-status="conference.mediaStatus.value"
           :media-error="conference.mediaError.value"
           :microphone-enabled="conference.microphoneEnabled.value"
@@ -845,6 +872,15 @@ function trapPanelFocus(event: KeyboardEvent) {
           >
             <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
             {{ live.session.value?.requiresApproval ? 'Aprovação ativa' : 'Sala aberta' }}
+          </button>
+          <button
+            v-if="live.session.value"
+            type="button"
+            class="mobile-overflow-sheet__action"
+            @click="openMediaSettingsFromOverflow"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/><circle cx="9" cy="9" r="2"/><path d="M20 4v6m-3-3h6"/></svg>
+            Câmera e microfone
           </button>
           <button type="button" class="mobile-overflow-sheet__action mobile-overflow-sheet__action--danger" @click="end">
             <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
@@ -1422,6 +1458,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   .control-bar {
     width: calc(100vw - 16px);
     max-width: none;
+    align-items: center;
     gap: 4px;
     margin-bottom: max(8px, env(safe-area-inset-bottom));
     padding: 5px;
@@ -1505,13 +1542,19 @@ function trapPanelFocus(event: KeyboardEvent) {
   .topbar__overflow {
     display: grid;
   }
+  .control-bar .mic {
+    margin-inline: 6px;
+  }
   .control-bar :deep(.mic__btn) {
-    min-width: 44px;
-    width: 44px;
-    min-height: 44px;
-    padding: 2px;
-    border-radius: 12px;
-    box-shadow: none;
+    min-width: 52px;
+    width: 52px;
+    min-height: 52px;
+    padding: 4px;
+    border-radius: 16px;
+    box-shadow: 0 6px 20px rgba(91, 134, 212, 0.38);
+  }
+  .control-bar :deep(.mic__btn.live) {
+    box-shadow: 0 6px 20px rgba(216, 79, 107, 0.38);
   }
   .control-bar :deep(.mic__btn span:not(.mic__pulse)) {
     position: absolute;
@@ -1768,13 +1811,13 @@ function trapPanelFocus(event: KeyboardEvent) {
 .hand-banner {
   position: absolute;
   z-index: 20;
-  top: 88px;
+  top: 78px;
   left: 50%;
   width: min(420px, calc(100vw - 32px));
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 10px 10px 14px;
+  gap: 8px;
+  padding: 10px 8px 10px 14px;
   transform: translateX(-50%);
   border: 1px solid rgba(240, 192, 96, 0.38);
   border-radius: 14px;
@@ -1783,6 +1826,9 @@ function trapPanelFocus(event: KeyboardEvent) {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36);
   backdrop-filter: blur(8px);
   animation: meeting-sheet-in 0.18s ease-out;
+}
+.hand-banner--new {
+  animation: hand-ring 0.5s ease-out;
 }
 .hand-banner__icon {
   flex: 0 0 auto;
@@ -1809,6 +1855,30 @@ function trapPanelFocus(event: KeyboardEvent) {
 }
 .hand-banner__btn:hover {
   background: rgba(240, 192, 96, 0.24);
+}
+.hand-banner__close {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  color: rgba(255, 233, 160, 0.6);
+  background: transparent;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.hand-banner__close:hover {
+  background: rgba(240, 192, 96, 0.16);
+  color: #ffe9a0;
+}
+@keyframes hand-ring {
+  0% { box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36), 0 0 0 0 rgba(240, 192, 96, 0.6); }
+  40% { box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36), 0 0 0 8px rgba(240, 192, 96, 0); }
+  100% { box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36), 0 0 0 0 rgba(240, 192, 96, 0); }
 }
 
 /* Badge na fila */
