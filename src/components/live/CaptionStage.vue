@@ -53,11 +53,7 @@ const DEFAULT_STEP = 1
 const fontStep = ref(DEFAULT_STEP)
 const stage = ref<HTMLElement | null>(null)
 const pinned = ref(true)
-const preferAdapted = ref(false)
-
-const hasAnyAdaptation = computed(() =>
-  props.transcript.some((e) => e.adaptation?.status === 'succeeded'),
-)
+const preferAdapted = ref(localStorage.getItem(MODE_KEY) === 'adapted')
 
 function resolveText(entry: TranscriptEntry): string {
   if (preferAdapted.value && entry.adaptation?.status === 'succeeded') {
@@ -99,7 +95,6 @@ onMounted(() => {
       fontStep.value = saved
     }
   }
-  preferAdapted.value = localStorage.getItem(MODE_KEY) === 'adapted'
   scrollToLive('auto')
 })
 
@@ -155,10 +150,10 @@ watch(
       </span>
       <div class="captions__controls">
         <button
-          v-if="hasAnyAdaptation"
           type="button"
           class="captions__mode-toggle"
           :class="{ 'captions__mode-toggle--active': preferAdapted }"
+          :data-caption-mode="preferAdapted ? 'adapted' : 'literal'"
           :aria-pressed="preferAdapted"
           :aria-label="preferAdapted ? 'Usando texto adaptado — clique para literal' : 'Usando texto literal — clique para adaptado'"
           @click="toggleMode"

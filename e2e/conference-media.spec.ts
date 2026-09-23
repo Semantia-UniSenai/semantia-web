@@ -285,16 +285,12 @@ test('keeps context open without media capture when save fails and succeeds on r
   await expect(contextForm).toBeHidden()
   expect(contextAttempts).toBe(2)
 
-  const captionMode = page.getByRole('group', { name: 'Versão da legenda' })
-  await expect(captionMode.getByRole('button', { name: 'Literal' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
-  await captionMode.getByRole('button', { name: 'Adaptado' }).click()
-  await expect(captionMode.getByRole('button', { name: 'Adaptado' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
+  const captionMode = page.locator('.captions__mode-toggle')
+  await expect(captionMode).toHaveAttribute('data-caption-mode', 'literal')
+  await expect(captionMode).toHaveAttribute('aria-pressed', 'false')
+  await captionMode.click()
+  await expect(captionMode).toHaveAttribute('data-caption-mode', 'adapted')
+  await expect(captionMode).toHaveAttribute('aria-pressed', 'true')
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem('semantia.captions.mode')))
     .toBe('adapted')
