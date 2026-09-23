@@ -66,16 +66,17 @@ let admissionArrivalTimer: ReturnType<typeof setTimeout> | null = null
 const chatReadCount = ref(0)
 const unreadChatCount = computed(() => Math.max(0, live.chat.value.length - chatReadCount.value))
 
-const handBannerDismissed = ref(false)
 const raisedHandNewArrival = ref(false)
 const showRaisedHandBanner = computed(
-  () => live.canManage.value && live.raisedHands.value.length > 0 && panel.value !== 'participants' && !handBannerDismissed.value,
+  () => live.canManage.value && raisedHandNewArrival.value && panel.value !== 'participants',
 )
-const firstRaisedHandName = computed(() => {
-  const firstHand = live.raisedHands.value[0]
-  if (!firstHand) return ''
-  return live.participants.value.find(p => p.participantId === firstHand.participantId)?.name ?? ''
+const latestRaisedHandName = computed(() => {
+  const hands = live.raisedHands.value
+  if (!hands.length) return ''
+  const latest = hands[hands.length - 1]
+  return live.participants.value.find(p => p.participantId === latest.participantId)?.name ?? ''
 })
+const raisedHandsExtraCount = computed(() => Math.max(0, live.raisedHands.value.length - 1))
 let raisedHandArrivalTimer: ReturnType<typeof setTimeout> | null = null
 
 const mobileOverflowOpen = ref(false)
@@ -160,17 +161,16 @@ watch(() => live.admissionQueue.value.length, (newLen, oldLen) => {
 })
 watch(() => live.raisedHands.value.length, (newLen, oldLen) => {
   if (newLen === 0) {
-    handBannerDismissed.value = false
     raisedHandNewArrival.value = false
+    if (raisedHandArrivalTimer !== null) { clearTimeout(raisedHandArrivalTimer); raisedHandArrivalTimer = null }
     return
   }
   if (newLen > (oldLen ?? 0) && live.canManage.value) {
-    handBannerDismissed.value = false
     raisedHandNewArrival.value = false
     void nextTick(() => {
       raisedHandNewArrival.value = true
       if (raisedHandArrivalTimer !== null) clearTimeout(raisedHandArrivalTimer)
-      raisedHandArrivalTimer = window.setTimeout(() => { raisedHandNewArrival.value = false }, 2500)
+      raisedHandArrivalTimer = window.setTimeout(() => { raisedHandNewArrival.value = false }, 5000)
     })
   }
 })
@@ -629,20 +629,17 @@ function trapPanelFocus(event: KeyboardEvent) {
 
       <div
         v-if="showRaisedHandBanner"
-        class="hand-banner"
-        :class="{ 'hand-banner--new': raisedHandNewArrival }"
+        class="hand-banner hand-banner--new"
         role="alert"
         aria-live="assertive"
         aria-atomic="true"
       >
         <span aria-hidden="true" class="hand-banner__icon">✋</span>
-        <span>
-          <template v-if="live.raisedHands.value.length === 1 && firstRaisedHandName">{{ firstRaisedHandName }} pedindo a palavra</template>
-          <template v-else-if="live.raisedHands.value.length === 1">1 pessoa pedindo a palavra</template>
-          <template v-else>{{ live.raisedHands.value.length }} pessoas pedindo a palavra</template>
+        <span class="hand-banner__text">
+          <strong>{{ latestRaisedHandName || 'Alguém' }} levantou a mão</strong>
+          <small v-if="raisedHandsExtraCount > 0">+ {{ raisedHandsExtraCount }} outros</small>
         </span>
         <button type="button" class="hand-banner__btn" @click="togglePanel('participants')">Ver</button>
-        <button type="button" class="hand-banner__close" aria-label="Fechar" @click="handBannerDismissed = true">✕</button>
       </div>
 
       <div
@@ -1828,17 +1825,27 @@ function trapPanelFocus(event: KeyboardEvent) {
   animation: meeting-sheet-in 0.18s ease-out;
 }
 .hand-banner--new {
-  animation: hand-ring 0.5s ease-out;
+  animation: hand-ring 0.5s ease-out, hand-shrink 5s linear forwards;
 }
 .hand-banner__icon {
   flex: 0 0 auto;
-  font-size: 16px;
+  font-size: 18px;
   line-height: 1;
 }
-.hand-banner span:nth-child(2) {
+.hand-banner__text {
   flex: 1;
-  font: 650 12px var(--body, inherit);
-  line-height: 1.3;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hand-banner__text strong {
+  font: 700 13px var(--body, inherit);
+  line-height: 1.2;
+}
+.hand-banner__text small {
+  font: 500 11px var(--body, inherit);
+  color: rgba(255, 233, 160, 0.65);
+  line-height: 1;
 }
 .hand-banner__btn {
   flex: 0 0 auto;
@@ -1856,29 +1863,15 @@ function trapPanelFocus(event: KeyboardEvent) {
 .hand-banner__btn:hover {
   background: rgba(240, 192, 96, 0.24);
 }
-.hand-banner__close {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 6px;
-  color: rgba(255, 233, 160, 0.6);
-  background: transparent;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.14s ease, color 0.14s ease;
-}
-.hand-banner__close:hover {
-  background: rgba(240, 192, 96, 0.16);
-  color: #ffe9a0;
-}
 @keyframes hand-ring {
   0% { box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36), 0 0 0 0 rgba(240, 192, 96, 0.6); }
-  40% { box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36), 0 0 0 8px rgba(240, 192, 96, 0); }
+  60% { box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36), 0 0 0 10px rgba(240, 192, 96, 0); }
   100% { box-shadow: 0 12px 30px rgba(0, 0, 0, 0.36), 0 0 0 0 rgba(240, 192, 96, 0); }
+}
+@keyframes hand-shrink {
+  0% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 /* Badge na fila */
