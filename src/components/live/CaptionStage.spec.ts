@@ -81,7 +81,9 @@ describe('CaptionStage', () => {
     })
 
     expect(wrapper.get('.captions__line').text()).toBe('Texto literal.')
-    expect(wrapper.get('[data-caption-mode="literal"]').attributes('aria-pressed')).toBe('true')
+    const toggle = wrapper.get('.captions__mode-toggle')
+    expect(toggle.attributes('data-caption-mode')).toBe('literal')
+    expect(toggle.attributes('aria-pressed')).toBe('false')
   })
 
   it('permite escolher adaptado e persiste apenas essa preferência local', async () => {
@@ -89,10 +91,13 @@ describe('CaptionStage', () => {
       transcript: [adaptedEntry(1, 'Texto literal.', 'Texto adaptado.')],
     })
 
-    await wrapper.get('[data-caption-mode="adapted"]').trigger('click')
+    const toggle = wrapper.get('.captions__mode-toggle')
+    await toggle.trigger('click')
 
     expect(wrapper.get('.captions__line').text()).toBe('Texto adaptado.')
     expect(wrapper.get('[data-testid="caption-announcer"]').text()).toBe('Texto adaptado.')
+    expect(toggle.attributes('data-caption-mode')).toBe('adapted')
+    expect(toggle.attributes('aria-pressed')).toBe('true')
     expect(localStorage.getItem(MODE_KEY)).toBe('adapted')
   })
 
@@ -103,7 +108,7 @@ describe('CaptionStage', () => {
         transcript: [adaptedEntry(1, 'Texto literal.', 'Não deve aparecer.', status)],
       })
 
-      await wrapper.get('[data-caption-mode="adapted"]').trigger('click')
+      await wrapper.get('.captions__mode-toggle').trigger('click')
 
       expect(wrapper.get('.captions__line').text()).toBe('Texto literal.')
     },
@@ -117,7 +122,8 @@ describe('CaptionStage', () => {
     })
 
     expect(wrapper.get('.captions__line').text()).toBe('Texto adaptado.')
-    expect(wrapper.get('[data-caption-mode="adapted"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('.captions__mode-toggle').attributes('data-caption-mode')).toBe('adapted')
+    expect(wrapper.get('.captions__mode-toggle').attributes('aria-pressed')).toBe('true')
   })
 
   it('quebra um final longo em linhas curtas balanceadas', () => {
