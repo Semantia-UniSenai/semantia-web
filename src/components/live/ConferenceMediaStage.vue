@@ -61,14 +61,14 @@ function handRaised(participantId: string) {
 }
 
 const AVATAR_PALETTE = [
-  { bg: '#1e3a5f', color: '#90c4ff' },
-  { bg: '#1b3a2f', color: '#6ee7b0' },
-  { bg: '#341e3a', color: '#c084fc' },
-  { bg: '#3a2a1e', color: '#fda96b' },
-  { bg: '#3a1e2a', color: '#f9a8d4' },
-  { bg: '#1e3a3a', color: '#67e8f9' },
-  { bg: '#3a361e', color: '#fde68a' },
-  { bg: '#2a1e3a', color: '#a5b4fc' },
+  { background: '#1e3a5f', color: '#90c4ff' },
+  { background: '#1b3a2f', color: '#6ee7b0' },
+  { background: '#341e3a', color: '#c084fc' },
+  { background: '#3a2a1e', color: '#fda96b' },
+  { background: '#3a1e2a', color: '#f9a8d4' },
+  { background: '#1e3a3a', color: '#67e8f9' },
+  { background: '#3a361e', color: '#fde68a' },
+  { background: '#2a1e3a', color: '#a5b4fc' },
 ]
 function avatarStyle(name: string) {
   let hash = 0

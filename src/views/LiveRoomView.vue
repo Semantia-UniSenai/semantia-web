@@ -452,14 +452,14 @@ function syncPanelMode() {
 }
 
 const AVATAR_PALETTE = [
-  { bg: '#1e3a5f', color: '#90c4ff' },
-  { bg: '#1b3a2f', color: '#6ee7b0' },
-  { bg: '#341e3a', color: '#c084fc' },
-  { bg: '#3a2a1e', color: '#fda96b' },
-  { bg: '#3a1e2a', color: '#f9a8d4' },
-  { bg: '#1e3a3a', color: '#67e8f9' },
-  { bg: '#3a361e', color: '#fde68a' },
-  { bg: '#2a1e3a', color: '#a5b4fc' },
+  { background: '#1e3a5f', color: '#90c4ff' },
+  { background: '#1b3a2f', color: '#6ee7b0' },
+  { background: '#341e3a', color: '#c084fc' },
+  { background: '#3a2a1e', color: '#fda96b' },
+  { background: '#3a1e2a', color: '#f9a8d4' },
+  { background: '#1e3a3a', color: '#67e8f9' },
+  { background: '#3a361e', color: '#fde68a' },
+  { background: '#2a1e3a', color: '#a5b4fc' },
 ]
 function avatarStyle(name: string) {
   let hash = 0
@@ -607,9 +607,9 @@ function trapPanelFocus(event: KeyboardEvent) {
           class="status"
           data-testid="meeting-status"
           :class="{ ended: live.ended.value, reconnecting: live.status.value !== 'connected' }"
-        ><i></i>{{ meetingStatusLabel }}</span>
+        ><i></i>{{ meetingStatusLabel }}<template v-if="live.session.value && !live.ended.value"> · {{ meetingDuration }}</template></span>
         <strong>{{ live.session.value?.title ?? 'Conectando à reunião…' }}</strong>
-        <small>{{ live.session.value?.roomName }}<template v-if="live.session.value && !live.ended.value"> · {{ meetingDuration }}</template></small>
+        <small>{{ live.session.value?.roomName }}</small>
       </div>
       <div class="topbar__actions">
         <button v-if="live.canManage.value && !live.ended.value" class="ghost" type="button" @click="copyInvite">
