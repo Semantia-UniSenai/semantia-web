@@ -79,6 +79,27 @@ const latestRaisedHandName = computed(() => {
 const raisedHandsExtraCount = computed(() => Math.max(0, live.raisedHands.value.length - 1))
 let raisedHandArrivalTimer: ReturnType<typeof setTimeout> | null = null
 
+const meetingElapsed = ref(0)
+let meetingTimerInterval: ReturnType<typeof setInterval> | null = null
+let meetingStartedAt: number | null = null
+
+const meetingDuration = computed(() => {
+  const s = meetingElapsed.value
+  const m = Math.floor(s / 60)
+  const h = Math.floor(m / 60)
+  if (h > 0) return `${h}:${String(m % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+  return `${m}:${String(s % 60).padStart(2, '0')}`
+})
+
+watch(() => live.session.value, (session) => {
+  if (session && meetingStartedAt === null) {
+    meetingStartedAt = Date.now()
+    meetingTimerInterval = window.setInterval(() => {
+      meetingElapsed.value = Math.floor((Date.now() - meetingStartedAt!) / 1000)
+    }, 1000)
+  }
+}, { immediate: true })
+
 const mobileOverflowOpen = ref(false)
 
 function openMobileOverflow() {
@@ -144,6 +165,7 @@ onBeforeUnmount(() => {
   panelMediaQuery?.removeEventListener('change', syncPanelMode)
   if (admissionArrivalTimer !== null) clearTimeout(admissionArrivalTimer)
   if (raisedHandArrivalTimer !== null) clearTimeout(raisedHandArrivalTimer)
+  if (meetingTimerInterval !== null) clearInterval(meetingTimerInterval)
   restoreConferenceMicrophoneAfterTest = false
   restoreConferenceCameraAfterTest = false
   void audioInput.stopTest()
@@ -429,6 +451,22 @@ function syncPanelMode() {
   isCompactPanel.value = panelMediaQuery?.matches ?? false
 }
 
+const AVATAR_PALETTE = [
+  { bg: '#1e3a5f', color: '#90c4ff' },
+  { bg: '#1b3a2f', color: '#6ee7b0' },
+  { bg: '#341e3a', color: '#c084fc' },
+  { bg: '#3a2a1e', color: '#fda96b' },
+  { bg: '#3a1e2a', color: '#f9a8d4' },
+  { bg: '#1e3a3a', color: '#67e8f9' },
+  { bg: '#3a361e', color: '#fde68a' },
+  { bg: '#2a1e3a', color: '#a5b4fc' },
+]
+function avatarStyle(name: string) {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) & 0xffff
+  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length]!
+}
+
 function participantName(participantId: string | null): string {
   if (!participantId) return ''
   return live.participants.value.find(p => p.participantId === participantId)?.name ?? ''
@@ -571,7 +609,7 @@ function trapPanelFocus(event: KeyboardEvent) {
           :class="{ ended: live.ended.value, reconnecting: live.status.value !== 'connected' }"
         ><i></i>{{ meetingStatusLabel }}</span>
         <strong>{{ live.session.value?.title ?? 'Conectando à reunião…' }}</strong>
-        <small>{{ live.session.value?.roomName }}</small>
+        <small>{{ live.session.value?.roomName }}<template v-if="live.session.value && !live.ended.value"> · {{ meetingDuration }}</template></small>
       </div>
       <div class="topbar__actions">
         <button v-if="live.canManage.value && !live.ended.value" class="ghost" type="button" @click="copyInvite">
@@ -718,7 +756,7 @@ function trapPanelFocus(event: KeyboardEvent) {
           />
           <div class="people" role="list" aria-label="Participantes na reunião" aria-live="polite">
             <article v-for="participant in live.participants.value" :key="participant.participantId" role="listitem">
-              <span class="avatar">{{ participant.name.charAt(0).toUpperCase() }}</span>
+              <span class="avatar" :style="avatarStyle(participant.name)">{{ participant.name.charAt(0).toUpperCase() }}</span>
               <div><strong>{{ participant.participantId === live.currentParticipantId.value ? 'Você' : participant.name }}</strong><small>{{ participant.role === 'HOST' ? 'Anfitrião' : participant.role === 'MODERATOR' ? 'Moderador' : participant.role === 'GUEST' ? 'Convidado' : 'Participante' }}</small></div>
               <button v-if="live.canManage.value && live.raisedHands.value.some((hand) => hand.participantId === participant.participantId)" type="button" @click="live.lowerParticipantHand(participant.participantId)">✋ Baixar</button>
               <span v-else-if="live.raisedHands.value.some((hand) => hand.participantId === participant.participantId)" class="raised">✋</span>
@@ -908,9 +946,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   min-height: 100svh;
   overflow: hidden;
   color: var(--meeting-text);
-  background:
-    radial-gradient(circle at 50% 10%, rgba(91, 134, 212, 0.13), transparent 34%),
-    var(--meeting-bg);
+  background: var(--meeting-bg);
 }
 .room svg {
   width: 20px;
@@ -1040,20 +1076,20 @@ function trapPanelFocus(event: KeyboardEvent) {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid #dce2ed;
+  border: 1px solid var(--meeting-border);
   border-radius: 22px;
-  background: #f7f8fb;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.26);
+  background: #0f1828;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
 }
 .side__header {
-  min-height: 72px;
+  min-height: 68px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 14px 16px 13px 20px;
-  border-bottom: 1px solid #dce2ed;
-  background: #fff;
+  border-bottom: 1px solid var(--meeting-border);
+  background: rgba(255, 255, 255, 0.03);
 }
 .side__header > div {
   min-width: 0;
@@ -1061,7 +1097,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   gap: 2px;
 }
 .side__header span {
-  color: #758096;
+  color: var(--meeting-muted);
   font-size: 9px;
   font-weight: 850;
   letter-spacing: 0.09em;
@@ -1069,42 +1105,71 @@ function trapPanelFocus(event: KeyboardEvent) {
 }
 .side__header h2 {
   overflow: hidden;
-  color: #192234;
-  font: 700 17px var(--display);
+  color: var(--meeting-text);
+  font: 700 16px var(--display);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .side__header button {
-  width: 44px;
-  min-width: 44px;
-  height: 44px;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
   padding: 0;
-  border: 1px solid #d9deea;
-  border-radius: 13px;
-  color: #4c5669;
-  background: #f5f7fa;
+  border: 1px solid var(--meeting-border);
+  border-radius: 12px;
+  color: var(--meeting-muted);
+  background: rgba(255, 255, 255, 0.04);
   cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.side__header button:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--meeting-text);
 }
 .people {
   gap: 1px;
   padding: 8px;
   overflow-y: auto;
-  background: #edf0f5;
+  background: transparent;
 }
 .people article {
-  min-height: 62px;
-  padding: 10px 11px;
+  min-height: 58px;
+  padding: 9px 11px;
   border: 0;
   border-radius: 13px;
-  background: #fff;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--meeting-text);
+}
+.people article strong {
+  color: var(--meeting-text);
+  font-size: 13px;
+}
+.people article small {
+  color: var(--meeting-muted);
+  font-size: 11px;
+}
+.people > div > article button:not(.remove-btn) {
+  margin-left: auto;
+  padding: 5px 10px;
+  border: 1px solid rgba(240, 192, 96, 0.28);
+  border-radius: 8px;
+  background: rgba(240, 192, 96, 0.08);
+  color: #f0c060;
+  font: 700 11px var(--display, inherit);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s ease;
+}
+.people > div > article button:not(.remove-btn):hover {
+  background: rgba(240, 192, 96, 0.16);
 }
 .avatar {
   width: 38px;
   height: 38px;
-  color: #10232f;
-  background: linear-gradient(135deg, #7bd5d8, #90aeea);
+  font-weight: 800;
+  font-size: 15px;
 }
 .remove-btn {
   margin-left: auto;

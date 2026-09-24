@@ -59,6 +59,22 @@ function microphoneStatus(participantId: string) {
 function handRaised(participantId: string) {
   return props.raisedParticipantIds.includes(participantId)
 }
+
+const AVATAR_PALETTE = [
+  { bg: '#1e3a5f', color: '#90c4ff' },
+  { bg: '#1b3a2f', color: '#6ee7b0' },
+  { bg: '#341e3a', color: '#c084fc' },
+  { bg: '#3a2a1e', color: '#fda96b' },
+  { bg: '#3a1e2a', color: '#f9a8d4' },
+  { bg: '#1e3a3a', color: '#67e8f9' },
+  { bg: '#3a361e', color: '#fde68a' },
+  { bg: '#2a1e3a', color: '#a5b4fc' },
+]
+function avatarStyle(name: string) {
+  let hash = 0
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) & 0xffff
+  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length]!
+}
 </script>
 
 <template>
@@ -77,6 +93,7 @@ function handRaised(participantId: string) {
         v-for="participant in participants"
         :key="participant.participantId"
         class="conference-tile"
+        :class="{ 'conference-tile--speaking': microphoneActive(participant.participantId) }"
         role="listitem"
         data-testid="conference-tile"
         :aria-label="`Vídeo de ${participant.name}. ${cameraStatus(participant.participantId)}. ${microphoneStatus(participant.participantId)}.${handRaised(participant.participantId) ? ' Mão levantada.' : ''}`"
@@ -85,7 +102,7 @@ function handRaised(participantId: string) {
           v-if="videoTrackFor(participant.participantId)"
           :track="videoTrackFor(participant.participantId)!"
         />
-        <div v-else class="conference-tile__fallback" aria-hidden="true">
+        <div v-else class="conference-tile__fallback" :style="avatarStyle(participant.name)" aria-hidden="true">
           {{ participant.name.charAt(0).toUpperCase() }}
         </div>
         <div class="conference-tile__identity">
@@ -155,9 +172,15 @@ function handRaised(participantId: string) {
   position: relative;
   min-height: 132px;
   overflow: hidden;
-  border: 1px solid rgba(202, 216, 244, 0.16);
+  border: 2px solid rgba(202, 216, 244, 0.1);
   border-radius: 16px;
   background: #121b2d;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.conference-tile--speaking {
+  border-color: rgba(70, 215, 149, 0.75);
+  box-shadow: 0 0 0 1px rgba(70, 215, 149, 0.25), 0 8px 24px rgba(0, 0, 0, 0.3);
 }
 
 .conference-tile__fallback {
@@ -165,9 +188,7 @@ function handRaised(participantId: string) {
   inset: 0;
   display: grid;
   place-items: center;
-  color: #132435;
-  background: linear-gradient(135deg, #83d7d8, #9db3ec);
-  font: 800 34px var(--display);
+  font: 800 36px var(--display);
 }
 
 .conference-tile__identity {
