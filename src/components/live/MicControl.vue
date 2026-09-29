@@ -283,5 +283,10 @@ const ERROR_HINTS: Record<string, string> = {
     padding-inline: 16px;
     font-size: 13px;
   }
+
+  .mic__quality {
+    max-height: 200px;
+    overflow-y: auto;
+  }
 }
 </style>

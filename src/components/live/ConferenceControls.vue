@@ -111,6 +111,8 @@ async function toggleCameraSettings() {
   closeCameraSettings()
 }
 
+defineExpose({ openSettings: toggleCameraSettings })
+
 function closeLocalTests() {
   if (cameraTestActive.value) emit('stop-camera-test')
   if (microphoneTestActive.value) emit('stop-microphone-test')
@@ -755,6 +757,29 @@ const statusLabel = computed(() => {
     height: 1px;
     overflow: hidden;
     clip: rect(0 0 0 0);
+  }
+
+  .camera-settings-trigger {
+    display: none;
+  }
+
+  .conference-controls__status--visible {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .conference-controls__error {
+    position: fixed;
+    right: 8px;
+    bottom: 74px;
+    left: 8px;
+    top: auto;
+    width: auto;
+    max-height: calc(100svh - 160px);
+    overflow-y: auto;
   }
 }
 </style>
