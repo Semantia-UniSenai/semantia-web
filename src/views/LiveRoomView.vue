@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { TransitionGroup, computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { patchSessionSettings, updateSessionContext, type AudienceContext } from '../api/sessions-context'
 import AdmissionQueue from '../components/live/AdmissionQueue.vue'
@@ -66,18 +66,34 @@ let admissionArrivalTimer: ReturnType<typeof setTimeout> | null = null
 const chatReadCount = ref(0)
 const unreadChatCount = computed(() => Math.max(0, live.chat.value.length - chatReadCount.value))
 
-const raisedHandNewArrival = ref(false)
-const showRaisedHandBanner = computed(
-  () => live.canManage.value && raisedHandNewArrival.value && panel.value !== 'participants',
-)
-const latestRaisedHandName = computed(() => {
-  const hands = live.raisedHands.value
-  if (!hands.length) return ''
-  const latest = hands[hands.length - 1]
-  return live.participants.value.find(p => p.participantId === latest.participantId)?.name ?? ''
-})
-const raisedHandsExtraCount = computed(() => Math.max(0, live.raisedHands.value.length - 1))
-let raisedHandArrivalTimer: ReturnType<typeof setTimeout> | null = null
+interface RoomToast {
+  id: string
+  type: 'hand' | 'chat' | 'join' | 'leave'
+  text: string
+  participantId?: string
+  timer: ReturnType<typeof setTimeout>
+}
+const toastQueue = ref<RoomToast[]>([])
+const knownRaisedHandIds = ref(new Set<string>())
+const participantsInitialized = ref(false)
+
+function addToast(type: RoomToast['type'], text: string, participantId?: string) {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const timer = window.setTimeout(() => dismissToast(id), 5000)
+  toastQueue.value.push({ id, type, text, participantId, timer })
+  if (toastQueue.value.length > 4) {
+    const oldest = toastQueue.value[0]!
+    clearTimeout(oldest.timer)
+    toastQueue.value.splice(0, 1)
+  }
+}
+function dismissToast(id: string) {
+  const idx = toastQueue.value.findIndex(t => t.id === id)
+  if (idx !== -1) {
+    clearTimeout(toastQueue.value[idx]!.timer)
+    toastQueue.value.splice(idx, 1)
+  }
+}
 
 const meetingElapsed = ref(0)
 let meetingTimerInterval: ReturnType<typeof setInterval> | null = null
@@ -164,7 +180,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   panelMediaQuery?.removeEventListener('change', syncPanelMode)
   if (admissionArrivalTimer !== null) clearTimeout(admissionArrivalTimer)
-  if (raisedHandArrivalTimer !== null) clearTimeout(raisedHandArrivalTimer)
+  for (const t of toastQueue.value) clearTimeout(t.timer)
   if (meetingTimerInterval !== null) clearInterval(meetingTimerInterval)
   restoreConferenceMicrophoneAfterTest = false
   restoreConferenceCameraAfterTest = false
@@ -181,23 +197,54 @@ watch(() => live.admissionQueue.value.length, (newLen, oldLen) => {
     })
   }
 })
-watch(() => live.raisedHands.value.length, (newLen, oldLen) => {
-  if (newLen === 0) {
-    raisedHandNewArrival.value = false
-    if (raisedHandArrivalTimer !== null) { clearTimeout(raisedHandArrivalTimer); raisedHandArrivalTimer = null }
+watch(() => live.raisedHands.value, (newHands) => {
+  if (!live.canManage.value || panel.value === 'participants') {
+    knownRaisedHandIds.value = new Set(newHands.map(h => h.participantId))
     return
   }
-  if (newLen > (oldLen ?? 0) && live.canManage.value) {
-    raisedHandNewArrival.value = false
-    void nextTick(() => {
-      raisedHandNewArrival.value = true
-      if (raisedHandArrivalTimer !== null) clearTimeout(raisedHandArrivalTimer)
-      raisedHandArrivalTimer = window.setTimeout(() => { raisedHandNewArrival.value = false }, 5000)
-    })
+  const newIds = new Set(newHands.map(h => h.participantId))
+  for (const hand of newHands) {
+    if (!knownRaisedHandIds.value.has(hand.participantId)) {
+      const name = live.participants.value.find(p => p.participantId === hand.participantId)?.name ?? 'Alguém'
+      addToast('hand', `${name} levantou a mão`, hand.participantId)
+    }
   }
-})
-watch(live.chat, () => {
-  if (panel.value === 'chat') chatReadCount.value = live.chat.value.length
+  knownRaisedHandIds.value = newIds
+}, { deep: true })
+
+watch(() => live.participants.value, (newParts, oldParts) => {
+  if (!participantsInitialized.value) {
+    participantsInitialized.value = true
+    return
+  }
+  if (!oldParts) return
+  const oldIds = new Set(oldParts.map(p => p.participantId))
+  const newIds = new Set(newParts.map(p => p.participantId))
+  for (const p of newParts) {
+    if (!oldIds.has(p.participantId) && p.participantId !== live.currentParticipantId.value) {
+      addToast('join', `${p.name} entrou na reunião`)
+    }
+  }
+  for (const p of oldParts) {
+    if (!newIds.has(p.participantId) && p.participantId !== live.currentParticipantId.value) {
+      addToast('leave', `${p.name} saiu da reunião`)
+    }
+  }
+}, { deep: true })
+
+watch(live.chat, (newChat, oldChat) => {
+  if (panel.value === 'chat') {
+    chatReadCount.value = newChat.length
+    return
+  }
+  if (oldChat && newChat.length > oldChat.length) {
+    const latest = newChat[newChat.length - 1]
+    if (latest && latest.participantId !== live.currentParticipantId.value) {
+      const senderName = live.participants.value.find(p => p.participantId === latest.participantId)?.name ?? 'Alguém'
+      const preview = latest.text.length > 50 ? latest.text.slice(0, 50) + '…' : latest.text
+      addToast('chat', `${senderName}: ${preview}`)
+    }
+  }
 }, { deep: true })
 watch(() => live.ended.value, (ended) => {
   if (ended) {
@@ -665,20 +712,49 @@ function trapPanelFocus(event: KeyboardEvent) {
       </div>
       <div v-if="live.ended.value" class="ended-banner" role="status">Reunião encerrada. O conteúdo está disponível somente para leitura conforme a retenção configurada.</div>
 
-      <div
-        v-if="showRaisedHandBanner"
-        class="hand-banner hand-banner--new"
-        role="alert"
-        aria-live="assertive"
-        aria-atomic="true"
-      >
-        <span aria-hidden="true" class="hand-banner__icon">✋</span>
-        <span class="hand-banner__text">
-          <strong>{{ latestRaisedHandName || 'Alguém' }} levantou a mão</strong>
-          <small v-if="raisedHandsExtraCount > 0">+ {{ raisedHandsExtraCount }} outros</small>
-        </span>
-        <button type="button" class="hand-banner__btn" @click="togglePanel('participants')">Ver</button>
-      </div>
+      <TransitionGroup tag="div" name="room-toast" class="toast-queue" aria-live="polite" aria-atomic="false">
+        <div
+          v-for="toast in toastQueue"
+          :key="toast.id"
+          class="room-toast"
+          :class="`room-toast--${toast.type}`"
+          role="status"
+        >
+          <span class="room-toast__icon" aria-hidden="true">
+            <template v-if="toast.type === 'hand'">✋</template>
+            <template v-else-if="toast.type === 'chat'">
+              <svg viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4V5Z"/></svg>
+            </template>
+            <template v-else-if="toast.type === 'join'">
+              <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM19 8v6M22 11h-6"/></svg>
+            </template>
+            <template v-else>
+              <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 11h-6"/></svg>
+            </template>
+          </span>
+          <span class="room-toast__text">{{ toast.text }}</span>
+          <button
+            v-if="toast.type === 'hand' && live.canManage.value && toast.participantId"
+            type="button"
+            class="room-toast__action"
+            @click="live.lowerParticipantHand(toast.participantId!); dismissToast(toast.id)"
+          >Baixar</button>
+          <button
+            v-else-if="toast.type === 'chat'"
+            type="button"
+            class="room-toast__action"
+            @click="togglePanel('chat'); dismissToast(toast.id)"
+          >Ver</button>
+          <button
+            type="button"
+            class="room-toast__dismiss"
+            aria-label="Fechar notificação"
+            @click="dismissToast(toast.id)"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </TransitionGroup>
 
       <div
         v-if="showAdmissionBanner"
@@ -1953,5 +2029,138 @@ function trapPanelFocus(event: KeyboardEvent) {
   font-size: 9px;
   font-weight: 850;
   vertical-align: middle;
+}
+
+/* Toast queue — estilo Google Meet */
+.toast-queue {
+  position: fixed;
+  z-index: 30;
+  bottom: calc(max(10px, env(safe-area-inset-bottom)) + 80px);
+  left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  width: min(340px, calc(100vw - 40px));
+}
+.room-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 8px 10px 13px;
+  border: 1px solid rgba(202, 216, 244, 0.18);
+  border-radius: 14px;
+  background: rgba(15, 24, 40, 0.96);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(12px);
+  color: var(--meeting-text);
+}
+.room-toast--hand {
+  border-color: rgba(240, 192, 96, 0.35);
+  background: rgba(42, 28, 4, 0.97);
+}
+.room-toast--chat {
+  border-color: rgba(117, 158, 231, 0.3);
+  background: rgba(12, 22, 42, 0.97);
+}
+.room-toast--join {
+  border-color: rgba(70, 215, 149, 0.3);
+  background: rgba(8, 30, 22, 0.97);
+}
+.room-toast--leave {
+  border-color: rgba(160, 160, 180, 0.2);
+  background: rgba(18, 22, 34, 0.97);
+  color: var(--meeting-muted);
+}
+.room-toast__icon {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  font-size: 16px;
+  background: rgba(255, 255, 255, 0.07);
+}
+.room-toast--hand .room-toast__icon { background: rgba(240, 192, 96, 0.14); }
+.room-toast--chat .room-toast__icon { background: rgba(117, 158, 231, 0.14); }
+.room-toast--join .room-toast__icon { background: rgba(70, 215, 149, 0.14); }
+.room-toast__icon svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.room-toast--hand .room-toast__icon svg { color: #f0c060; }
+.room-toast--chat .room-toast__icon svg { color: #90b8f8; }
+.room-toast--join .room-toast__icon svg { color: #6ee7b0; }
+.room-toast--leave .room-toast__icon svg { color: #8895b3; }
+.room-toast__text {
+  flex: 1;
+  min-width: 0;
+  font: 600 12px var(--body, inherit);
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.room-toast__action {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--meeting-text);
+  font: 700 11px var(--display, inherit);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s ease;
+}
+.room-toast__action:hover { background: rgba(255, 255, 255, 0.13); }
+.room-toast__dismiss {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--meeting-muted);
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.room-toast__dismiss:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--meeting-text);
+}
+.room-toast__dismiss svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* Animação de entrada/saída dos toasts */
+.room-toast-enter-active { transition: opacity 0.2s ease, transform 0.2s ease; }
+.room-toast-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }
+.room-toast-enter-from { opacity: 0; transform: translateY(10px); }
+.room-toast-leave-to   { opacity: 0; transform: translateY(6px); }
+
+@media (max-width: 620px) {
+  .toast-queue {
+    left: 10px;
+    right: 10px;
+    bottom: calc(max(8px, env(safe-area-inset-bottom)) + 76px);
+    width: auto;
+  }
 }
 </style>
