@@ -118,6 +118,12 @@ watch(() => live.session.value, (session) => {
 
 const mobileOverflowOpen = ref(false)
 const reactionsTrayOpen = ref(false)
+const roomTheme = ref<'dark' | 'light'>((localStorage.getItem('room-theme') as 'dark' | 'light') || 'dark')
+
+function toggleTheme() {
+  roomTheme.value = roomTheme.value === 'dark' ? 'light' : 'dark'
+  localStorage.setItem('room-theme', roomTheme.value)
+}
 let reactionsTrayTimer: ReturnType<typeof setTimeout> | null = null
 
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '🎉', '🙌']
@@ -688,7 +694,7 @@ function trapPanelFocus(event: KeyboardEvent) {
     </div>
   </div>
 
-  <main class="room" :class="{ 'room--panel-open': panel }">
+  <main class="room" :class="{ 'room--panel-open': panel, 'room--light': roomTheme === 'light' }">
     <a class="skip-link" href="#captions-main">Ir para a legenda</a>
     <header class="topbar" :inert="isCompactPanel && !!panel">
       <button class="back" type="button" aria-label="Sair da reunião" @click="leave">
@@ -705,6 +711,17 @@ function trapPanelFocus(event: KeyboardEvent) {
         <small>{{ live.session.value?.roomName }}</small>
       </div>
       <div class="topbar__actions">
+        <button
+          v-if="!live.ended.value"
+          class="ghost"
+          type="button"
+          :title="roomTheme === 'dark' ? 'Mudar para tema claro' : 'Mudar para tema escuro'"
+          @click="toggleTheme"
+        >
+          <svg v-if="roomTheme === 'dark'" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          <svg v-else aria-hidden="true" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <span>{{ roomTheme === 'dark' ? 'Claro' : 'Escuro' }}</span>
+        </button>
         <button v-if="live.canManage.value && !live.ended.value" class="ghost" type="button" @click="copyInvite">
           <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1.1l2-2A5 5 0 0 0 12 4l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>
           <span>{{ copied ? 'Link copiado' : 'Convidar' }}</span>
@@ -742,7 +759,7 @@ function trapPanelFocus(event: KeyboardEvent) {
         </button>
       </div>
       <button
-        v-if="live.canManage.value && !live.ended.value"
+        v-if="live.session.value && !live.ended.value"
         class="topbar__overflow"
         type="button"
         aria-label="Mais opções da reunião"
@@ -1051,7 +1068,7 @@ function trapPanelFocus(event: KeyboardEvent) {
       </nav>
 
       <div
-        v-if="mobileOverflowOpen && live.canManage.value && !live.ended.value"
+        v-if="mobileOverflowOpen && live.session.value && !live.ended.value"
         class="mobile-overflow-backdrop"
         role="presentation"
         @click.self="closeMobileOverflow"
@@ -1066,29 +1083,7 @@ function trapPanelFocus(event: KeyboardEvent) {
         >
           <div class="mobile-overflow-sheet__handle" aria-hidden="true"></div>
           <p class="mobile-overflow-sheet__title">Reunião</p>
-          <button type="button" class="mobile-overflow-sheet__action" @click="copyInviteAndClose">
-            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1.1l2-2A5 5 0 0 0 12 4l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>
-            {{ copied ? 'Link copiado!' : 'Convidar' }}
-          </button>
-          <button
-            type="button"
-            class="mobile-overflow-sheet__action"
-            :class="{ 'mobile-overflow-sheet__action--active': live.session.value?.requiresApproval }"
-            :aria-pressed="live.session.value?.requiresApproval"
-            @click="toggleApproval"
-          >
-            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-            {{ live.session.value?.requiresApproval ? 'Aprovação ativa' : 'Sala aberta' }}
-          </button>
-          <button
-            v-if="live.session.value"
-            type="button"
-            class="mobile-overflow-sheet__action"
-            @click="openMediaSettingsFromOverflow"
-          >
-            <svg aria-hidden="true" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/><circle cx="9" cy="9" r="2"/><path d="M20 4v6m-3-3h6"/></svg>
-            Câmera e microfone
-          </button>
+
           <div class="mobile-overflow-sheet__emojis">
             <p class="mobile-overflow-sheet__emojis-label">Reagir</p>
             <div class="mobile-overflow-sheet__emoji-row">
@@ -1102,14 +1097,52 @@ function trapPanelFocus(event: KeyboardEvent) {
               >{{ emoji }}</button>
             </div>
           </div>
-          <button type="button" class="mobile-overflow-sheet__action" @click="live.muteAll(); closeMobileOverflow()">
-            <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path d="M4 4l16 16"/></svg>
-            Silenciar todos
+
+          <button
+            type="button"
+            class="mobile-overflow-sheet__action"
+            @click="toggleTheme(); closeMobileOverflow()"
+          >
+            <svg v-if="roomTheme === 'dark'" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            <svg v-else aria-hidden="true" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            {{ roomTheme === 'dark' ? 'Tema claro' : 'Tema escuro' }}
           </button>
-          <button type="button" class="mobile-overflow-sheet__action mobile-overflow-sheet__action--danger" @click="end">
-            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
-            {{ confirmingEnd ? 'Confirmar encerramento' : 'Encerrar reunião' }}
+
+          <button
+            v-if="live.session.value"
+            type="button"
+            class="mobile-overflow-sheet__action"
+            @click="openMediaSettingsFromOverflow"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/><circle cx="9" cy="9" r="2"/><path d="M20 4v6m-3-3h6"/></svg>
+            Câmera e microfone
           </button>
+
+          <template v-if="live.canManage.value">
+            <button type="button" class="mobile-overflow-sheet__action" @click="copyInviteAndClose">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1.1l2-2A5 5 0 0 0 12 4l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>
+              {{ copied ? 'Link copiado!' : 'Convidar' }}
+            </button>
+            <button
+              type="button"
+              class="mobile-overflow-sheet__action"
+              :class="{ 'mobile-overflow-sheet__action--active': live.session.value?.requiresApproval }"
+              :aria-pressed="live.session.value?.requiresApproval"
+              @click="toggleApproval"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+              {{ live.session.value?.requiresApproval ? 'Aprovação ativa' : 'Sala aberta' }}
+            </button>
+            <button type="button" class="mobile-overflow-sheet__action" @click="live.muteAll(); closeMobileOverflow()">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path d="M4 4l16 16"/></svg>
+              Silenciar todos
+            </button>
+            <button type="button" class="mobile-overflow-sheet__action mobile-overflow-sheet__action--danger" @click="end">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+              {{ confirmingEnd ? 'Confirmar encerramento' : 'Encerrar reunião' }}
+            </button>
+          </template>
+
           <button type="button" class="mobile-overflow-sheet__cancel" @click="closeMobileOverflow">Cancelar</button>
         </div>
       </div>
@@ -1136,6 +1169,14 @@ function trapPanelFocus(event: KeyboardEvent) {
   overflow: hidden;
   color: var(--meeting-text);
   background: var(--meeting-bg);
+}
+.room--light {
+  --meeting-bg: #f0f2f8;
+  --meeting-surface: #e4e8f0;
+  --meeting-surface-raised: #d8dde9;
+  --meeting-border: rgba(0, 0, 0, 0.12);
+  --meeting-text: #1a2540;
+  --meeting-muted: #5a6988;
 }
 .room svg {
   width: 20px;
