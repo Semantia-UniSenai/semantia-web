@@ -1178,6 +1178,13 @@ function trapPanelFocus(event: KeyboardEvent) {
   --meeting-text: #1a2540;
   --meeting-muted: #5a6988;
 }
+.room--light .topbar {
+  background: rgba(240, 242, 248, 0.92);
+}
+.room--light .control-bar {
+  background: rgba(216, 221, 233, 0.96);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+}
 .room--light .ghost,
 .room--light .back {
   background: rgba(0, 0, 0, 0.04);
@@ -1316,6 +1323,8 @@ function trapPanelFocus(event: KeyboardEvent) {
   min-height: 0;
   padding: 0;
   overflow: hidden;
+  background: #080d19;
+  color: #f4f7ff;
 }
 .stage > :first-child {
   flex: 1;
