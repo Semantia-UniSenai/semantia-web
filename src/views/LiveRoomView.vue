@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { TransitionGroup, computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Transition, TransitionGroup, computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { patchSessionSettings, updateSessionContext, type AudienceContext } from '../api/sessions-context'
 import AdmissionQueue from '../components/live/AdmissionQueue.vue'
@@ -117,6 +117,34 @@ watch(() => live.session.value, (session) => {
 }, { immediate: true })
 
 const mobileOverflowOpen = ref(false)
+const reactionsTrayOpen = ref(false)
+let reactionsTrayTimer: ReturnType<typeof setTimeout> | null = null
+
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '🎉', '🙌']
+
+interface FloatingReaction {
+  id: string
+  emoji: string
+  name: string
+  left: number
+}
+const floatingReactions = ref<FloatingReaction[]>([])
+
+function toggleReactionsTray() {
+  reactionsTrayOpen.value = !reactionsTrayOpen.value
+  if (reactionsTrayOpen.value) {
+    if (reactionsTrayTimer) clearTimeout(reactionsTrayTimer)
+    reactionsTrayTimer = window.setTimeout(() => {
+      reactionsTrayOpen.value = false
+    }, 6000)
+  }
+}
+
+async function sendReaction(emoji: string) {
+  reactionsTrayOpen.value = false
+  if (reactionsTrayTimer) clearTimeout(reactionsTrayTimer)
+  await live.sendReaction(emoji)
+}
 
 function openMobileOverflow() {
   mobileOverflowOpen.value = true
@@ -182,6 +210,7 @@ onBeforeUnmount(() => {
   if (admissionArrivalTimer !== null) clearTimeout(admissionArrivalTimer)
   for (const t of toastQueue.value) clearTimeout(t.timer)
   if (meetingTimerInterval !== null) clearInterval(meetingTimerInterval)
+  if (reactionsTrayTimer !== null) clearTimeout(reactionsTrayTimer)
   restoreConferenceMicrophoneAfterTest = false
   restoreConferenceCameraAfterTest = false
   void audioInput.stopTest()
@@ -253,6 +282,23 @@ watch(() => live.ended.value, (ended) => {
     restoreConferenceCameraAfterTest = false
     void audioInput.stopTest()
     void videoInput.stopTest()
+  }
+})
+
+watch(() => live.reactions.value.length, (newLen, oldLen) => {
+  if (newLen <= (oldLen ?? 0)) return
+  const latest = live.reactions.value[newLen - 1]!
+  const { id, emoji, name } = latest
+  const left = 5 + Math.random() * 70
+  floatingReactions.value.push({ id, emoji, name, left })
+  window.setTimeout(() => {
+    floatingReactions.value = floatingReactions.value.filter(r => r.id !== id)
+  }, 3800)
+})
+
+watch(() => live.mutedByHostAt.value, (ts) => {
+  if (ts && conference.microphoneEnabled.value) {
+    void toggleConferenceMicrophone()
   }
 })
 watch(
@@ -676,6 +722,16 @@ function trapPanelFocus(event: KeyboardEvent) {
         </button>
         <button
           v-if="live.canManage.value && !live.ended.value"
+          class="ghost"
+          type="button"
+          title="Silenciar todos os participantes"
+          @click="live.muteAll()"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path d="M4 4l16 16"/></svg>
+          <span>Silenciar todos</span>
+        </button>
+        <button
+          v-if="live.canManage.value && !live.ended.value"
           class="danger"
           type="button"
           :aria-label="confirmingEnd ? 'Confirmar encerramento' : 'Encerrar reunião'"
@@ -753,6 +809,18 @@ function trapPanelFocus(event: KeyboardEvent) {
           >
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
           </button>
+        </div>
+      </TransitionGroup>
+
+      <TransitionGroup tag="div" name="float-reaction" class="floating-reactions" aria-hidden="true">
+        <div
+          v-for="r in floatingReactions"
+          :key="r.id"
+          class="floating-reaction"
+          :style="{ left: r.left + '%' }"
+        >
+          <span class="floating-reaction__emoji">{{ r.emoji }}</span>
+          <span class="floating-reaction__name">{{ r.name }}</span>
         </div>
       </TransitionGroup>
 
@@ -922,6 +990,34 @@ function trapPanelFocus(event: KeyboardEvent) {
           <span class="control-icon" aria-hidden="true">✋</span>
           <span class="control-copy"><strong>{{ myHand ? 'Baixar mão' : 'Levantar mão' }}</strong><small>{{ myHand ? 'Sinal ativo' : 'Pedir a palavra' }}</small></span>
         </button>
+        <div v-if="!live.ended.value" class="reaction-ctrl">
+          <button
+            class="meeting-control"
+            :class="{ 'meeting-control--active': reactionsTrayOpen }"
+            type="button"
+            :aria-pressed="reactionsTrayOpen"
+            aria-label="Abrir painel de reações"
+            @click="toggleReactionsTray"
+          >
+            <span class="control-icon" aria-hidden="true">😊</span>
+            <span class="control-copy">
+              <strong>Reagir</strong>
+              <small>Reações</small>
+            </span>
+          </button>
+          <Transition name="reaction-tray">
+            <div v-if="reactionsTrayOpen" class="reaction-tray" role="toolbar" aria-label="Escolha uma reação">
+              <button
+                v-for="emoji in REACTION_EMOJIS"
+                :key="emoji"
+                type="button"
+                class="reaction-tray__btn"
+                :aria-label="emoji"
+                @click="sendReaction(emoji)"
+              >{{ emoji }}</button>
+            </div>
+          </Transition>
+        </div>
         <button
           ref="chatTrigger"
           class="meeting-control"
@@ -992,6 +1088,10 @@ function trapPanelFocus(event: KeyboardEvent) {
           >
             <svg aria-hidden="true" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/><circle cx="9" cy="9" r="2"/><path d="M20 4v6m-3-3h6"/></svg>
             Câmera e microfone
+          </button>
+          <button type="button" class="mobile-overflow-sheet__action" @click="live.muteAll(); closeMobileOverflow()">
+            <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path d="M4 4l16 16"/></svg>
+            Silenciar todos
           </button>
           <button type="button" class="mobile-overflow-sheet__action mobile-overflow-sheet__action--danger" @click="end">
             <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
@@ -1871,6 +1971,104 @@ function trapPanelFocus(event: KeyboardEvent) {
 @media (prefers-reduced-motion: reduce) {
   :global(body:has(.room) [vw].enabled) {
     transition: none;
+  }
+}
+
+/* Reactions tray */
+.reaction-ctrl {
+  position: relative;
+}
+.meeting-control--active .control-icon {
+  background: rgba(117, 158, 231, 0.2);
+  color: #90b8f8;
+}
+.reaction-tray {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid var(--meeting-border);
+  border-radius: 18px;
+  background: rgba(15, 22, 40, 0.97);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(14px);
+  white-space: nowrap;
+}
+.reaction-tray__btn {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+}
+.reaction-tray__btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--meeting-border);
+  transform: scale(1.18);
+}
+.reaction-tray__btn:active {
+  transform: scale(1.05);
+}
+.reaction-tray-enter-active { transition: opacity 0.15s ease, transform 0.15s ease; }
+.reaction-tray-leave-active { transition: opacity 0.12s ease, transform 0.12s ease; }
+.reaction-tray-enter-from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+.reaction-tray-leave-to   { opacity: 0; transform: translateX(-50%) translateY(4px); }
+
+/* Floating reaction animations */
+.floating-reactions {
+  position: fixed;
+  z-index: 25;
+  bottom: calc(max(10px, env(safe-area-inset-bottom)) + 90px);
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+.floating-reaction {
+  position: absolute;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  animation: reaction-float 3.8s ease-out forwards;
+}
+.floating-reaction__emoji {
+  font-size: 32px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.45));
+}
+.floating-reaction__name {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(8, 13, 25, 0.72);
+  color: rgba(244, 247, 255, 0.85);
+  font: 600 10px var(--body, inherit);
+  white-space: nowrap;
+  backdrop-filter: blur(4px);
+}
+@keyframes reaction-float {
+  0%   { transform: translateY(0);      opacity: 1; }
+  70%  { opacity: 1; }
+  100% { transform: translateY(-180px); opacity: 0; }
+}
+.float-reaction-enter-active,
+.float-reaction-leave-active { transition: none; }
+.float-reaction-enter-from,
+.float-reaction-leave-to { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .floating-reaction {
+    animation: none;
+    opacity: 0;
   }
 }
 

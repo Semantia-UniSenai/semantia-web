@@ -135,6 +135,15 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
   const transcriptionStatus = ref<BackendTranscriptionStatus | null>(null)
   const admissionQueue = ref<AdmissionEntry[]>([])
   const admissionStatus = ref<'none' | 'waiting' | 'denied' | 'removed'>('none')
+
+  interface IncomingReaction {
+    id: string
+    participantId: string
+    name: string
+    emoji: string
+  }
+  const reactions = ref<IncomingReaction[]>([])
+  const mutedByHostAt = ref<number | null>(null)
   const ended = computed(() => session.value?.status === 'ENDED')
   const canPublishTranscript = computed(() => role.value === 'HOST' && !ended.value)
   const joined = computed(() => !!session.value && status.value === 'connected')
@@ -310,6 +319,13 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
         session.value = { ...session.value, status: 'ENDED', endedAt }
       }
       clearPendingAudio()
+    })
+    next.on('reaction:received', ({ participantId, name, emoji }: { participantId: string; name: string; emoji: string }) => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+      reactions.value = [...reactions.value, { id, participantId, name, emoji }]
+    })
+    next.on('participant:muted-all', () => {
+      mutedByHostAt.value = Date.now()
     })
     next.connect()
   }
@@ -573,6 +589,8 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
   const lowerParticipantHand = (participantId: string) =>
     emitAck('hand:lower-for', { participantId })
   const endSession = () => emitAck('session:end')
+  const sendReaction = (emoji: string) => emitAck('reaction:send', { emoji })
+  const muteAll = () => emitAck('participant:mute-all')
 
   const removeParticipant = (participantId: string) =>
     emitAck('participant:remove', { participantId })
@@ -650,6 +668,10 @@ export function useLiveSession(options: UseLiveSessionOptions = {}) {
     lowerHand,
     lowerParticipantHand,
     endSession,
+    sendReaction,
+    muteAll,
+    reactions,
+    mutedByHostAt,
     requestMediaCredentials,
     admissionQueue,
     admissionStatus,
