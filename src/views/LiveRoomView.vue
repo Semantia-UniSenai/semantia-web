@@ -1178,6 +1178,25 @@ function trapPanelFocus(event: KeyboardEvent) {
   --meeting-text: #1a2540;
   --meeting-muted: #5a6988;
 }
+.room--light .stage {
+  --night: #eef1f8;
+  --night-2: #e2e7f2;
+  --night-line: rgba(0, 0, 0, 0.1);
+  --on-night: #1a2540;
+}
+.room--light .stage :deep(.captions__line) {
+  color: #2a3a60;
+}
+.room--light .stage :deep(.captions__line--current) {
+  color: #0d1526;
+}
+.room--light .stage :deep(.captions__line--partial) {
+  color: #4a5f8a;
+}
+.room--light .stage :deep(.captions__word--old),
+.room--light .stage :deep(.captions__timestamp) {
+  color: #6b7fa4;
+}
 .room--light .topbar {
   background: rgba(240, 242, 248, 0.92);
 }
@@ -1323,8 +1342,8 @@ function trapPanelFocus(event: KeyboardEvent) {
   min-height: 0;
   padding: 0;
   overflow: hidden;
-  background: #080d19;
-  color: #f4f7ff;
+  background: var(--meeting-bg);
+  color: var(--meeting-text);
 }
 .stage > :first-child {
   flex: 1;
