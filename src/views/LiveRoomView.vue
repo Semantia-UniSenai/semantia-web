@@ -1089,6 +1089,19 @@ function trapPanelFocus(event: KeyboardEvent) {
             <svg aria-hidden="true" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/><circle cx="9" cy="9" r="2"/><path d="M20 4v6m-3-3h6"/></svg>
             Câmera e microfone
           </button>
+          <div class="mobile-overflow-sheet__emojis">
+            <p class="mobile-overflow-sheet__emojis-label">Reagir</p>
+            <div class="mobile-overflow-sheet__emoji-row">
+              <button
+                v-for="emoji in REACTION_EMOJIS"
+                :key="emoji"
+                type="button"
+                class="mobile-overflow-sheet__emoji-btn"
+                :aria-label="emoji"
+                @click="sendReaction(emoji); closeMobileOverflow()"
+              >{{ emoji }}</button>
+            </div>
+          </div>
           <button type="button" class="mobile-overflow-sheet__action" @click="live.muteAll(); closeMobileOverflow()">
             <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path d="M4 4l16 16"/></svg>
             Silenciar todos
@@ -1913,6 +1926,44 @@ function trapPanelFocus(event: KeyboardEvent) {
   color: #7fe8c0;
   background: rgba(109, 222, 178, 0.08);
 }
+.mobile-overflow-sheet__emojis {
+  padding: 4px 14px 8px;
+  border: 1px solid var(--meeting-border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.mobile-overflow-sheet__emojis-label {
+  margin: 0 0 8px;
+  color: var(--meeting-muted);
+  font: 750 10px var(--body);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.mobile-overflow-sheet__emoji-row {
+  display: flex;
+  gap: 6px;
+}
+.mobile-overflow-sheet__emoji-btn {
+  flex: 1;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+}
+.mobile-overflow-sheet__emoji-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--meeting-border);
+  transform: scale(1.15);
+}
+.mobile-overflow-sheet__emoji-btn:active {
+  transform: scale(1.05);
+}
 .mobile-overflow-sheet__cancel {
   min-height: 48px;
   margin-top: 4px;
@@ -1977,6 +2028,11 @@ function trapPanelFocus(event: KeyboardEvent) {
 /* Reactions tray */
 .reaction-ctrl {
   position: relative;
+}
+@media (max-width: 1023px) {
+  .reaction-ctrl {
+    display: none;
+  }
 }
 .meeting-control--active .control-icon {
   background: rgba(117, 158, 231, 0.2);
