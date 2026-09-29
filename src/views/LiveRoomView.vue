@@ -1178,6 +1178,35 @@ function trapPanelFocus(event: KeyboardEvent) {
   --meeting-text: #1a2540;
   --meeting-muted: #5a6988;
 }
+.room--light .ghost,
+.room--light .back {
+  background: rgba(0, 0, 0, 0.04);
+}
+.room--light .back:hover,
+.room--light .ghost:hover {
+  background: rgba(26, 37, 64, 0.1);
+  border-color: rgba(26, 37, 64, 0.25);
+}
+.room--light .mobile-overflow-sheet__action {
+  background: rgba(0, 0, 0, 0.04);
+}
+.room--light .mobile-overflow-sheet__action:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+.room--light .mobile-overflow-sheet__emojis {
+  background: rgba(0, 0, 0, 0.04);
+}
+.room--light .mobile-overflow-sheet__emoji-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: var(--meeting-border);
+}
+.room--light .mobile-overflow-sheet__cancel {
+  border-color: var(--meeting-border);
+  background: rgba(0, 0, 0, 0.03);
+}
+.room--light .mobile-overflow-sheet__cancel:hover {
+  background: rgba(0, 0, 0, 0.07);
+}
 .room svg {
   width: 20px;
   height: 20px;
@@ -1913,7 +1942,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   border: 1px solid var(--meeting-border);
   border-bottom: 0;
   border-radius: 20px 20px 0 0;
-  background: #141e32;
+  background: var(--meeting-surface-raised);
   box-shadow: 0 -20px 48px rgba(0, 0, 0, 0.48);
   animation: meeting-sheet-in 0.2s ease-out;
 }
@@ -1922,7 +1951,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   height: 4px;
   margin: 8px auto 2px;
   border-radius: 999px;
-  background: rgba(202, 216, 244, 0.22);
+  background: var(--meeting-border);
 }
 .mobile-overflow-sheet__title {
   padding: 0 4px 2px;
