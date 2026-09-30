@@ -1244,6 +1244,10 @@ function trapPanelFocus(event: KeyboardEvent) {
   background: rgba(216, 221, 233, 0.96);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
 }
+.room--light .control-icon {
+  color: #2a3a60;
+  background: rgba(0, 0, 0, 0.07);
+}
 .room--light .ghost,
 .room--light .back {
   background: rgba(0, 0, 0, 0.04);
