@@ -1178,24 +1178,64 @@ function trapPanelFocus(event: KeyboardEvent) {
   --meeting-text: #1a2540;
   --meeting-muted: #5a6988;
 }
-.room--light .stage {
-  --night: #eef1f8;
-  --night-2: #e2e7f2;
-  --night-line: rgba(0, 0, 0, 0.1);
-  --on-night: #1a2540;
+.room--light .stage :deep(.captions) {
+  background: #f8f9fc;
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: none;
+}
+.room--light .stage :deep(.captions__tools) {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.08);
+  backdrop-filter: none;
+}
+.room--light .stage :deep(.captions__label) {
+  color: #3a4a6a;
+}
+.room--light .stage :deep(.captions__label strong) {
+  color: #1a2540;
+}
+.room--light .stage :deep(.captions__label small) {
+  color: #5a6988;
+}
+.room--light .stage :deep(.dot) {
+  background: #c0c8d8;
+}
+.room--light .stage :deep(.dot--active) {
+  background: #22b87a;
+  box-shadow: 0 0 0 4px rgba(34, 184, 122, 0.15);
+}
+.room--light .stage :deep(.captions__mode-toggle) {
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #5a6988;
+  background: rgba(0, 0, 0, 0.04);
+}
+.room--light .stage :deep(.captions__mode-toggle:hover) {
+  color: #1a2540;
+  border-color: rgba(0, 0, 0, 0.25);
+}
+.room--light .stage :deep(.captions__font button) {
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #3a4a6a;
+  background: rgba(0, 0, 0, 0.04);
+}
+.room--light .stage :deep(.captions__font button:hover:not(:disabled)) {
+  color: #1a2540;
+  border-color: rgba(0, 0, 0, 0.3);
 }
 .room--light .stage :deep(.captions__line) {
-  color: #2a3a60;
+  color: #8090b0;
 }
 .room--light .stage :deep(.captions__line--current) {
   color: #0d1526;
+  text-shadow: none;
 }
 .room--light .stage :deep(.captions__line--partial) {
-  color: #4a5f8a;
+  color: #2a5090;
 }
-.room--light .stage :deep(.captions__word--old),
-.room--light .stage :deep(.captions__timestamp) {
-  color: #6b7fa4;
+.room--light .stage :deep(.captions__waiting) {
+  color: #5a6988;
+  border-color: rgba(0, 0, 0, 0.1);
+  background: rgba(0, 0, 0, 0.03);
 }
 .room--light .topbar {
   background: rgba(240, 242, 248, 0.92);
