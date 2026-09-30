@@ -2454,6 +2454,41 @@ function trapPanelFocus(event: KeyboardEvent) {
 }
 
 /* ─── Tema claro ─────────────────────────────────────────────────────────── */
+/* Side panel (chat + participants) */
+.room--light .side {
+  background: var(--meeting-surface);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+}
+.room--light .side__header {
+  background: rgba(0, 0, 0, 0.02);
+}
+.room--light .side__header button {
+  background: rgba(0, 0, 0, 0.04);
+}
+.room--light .side__header button:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--meeting-text);
+}
+.room--light .people article {
+  background: rgba(0, 0, 0, 0.03);
+}
+/* ConferenceControls (câmera/mic no control bar) */
+.room--light .control-bar :deep(.conference-control) {
+  color: #1a2540;
+}
+.room--light .control-bar :deep(.conference-control:hover:not(:disabled)),
+.room--light .control-bar :deep(.conference-control.active) {
+  border-color: rgba(0, 0, 0, 0.12);
+  background: rgba(0, 0, 0, 0.06);
+}
+.room--light .control-bar :deep(.conference-control__icon) {
+  color: #2a3a60;
+  background: rgba(0, 0, 0, 0.07);
+}
+.room--light .control-bar :deep(.conference-control.active .conference-control__icon) {
+  color: #10232f;
+  background: #55c8ca;
+}
 .room--light {
   --meeting-bg: #f0f2f8;
   --meeting-surface: #e4e8f0;
