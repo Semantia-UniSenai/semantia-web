@@ -1170,113 +1170,6 @@ function trapPanelFocus(event: KeyboardEvent) {
   color: var(--meeting-text);
   background: var(--meeting-bg);
 }
-.room--light {
-  --meeting-bg: #f0f2f8;
-  --meeting-surface: #e4e8f0;
-  --meeting-surface-raised: #d8dde9;
-  --meeting-border: rgba(0, 0, 0, 0.12);
-  --meeting-text: #1a2540;
-  --meeting-muted: #5a6988;
-}
-.room--light .stage :deep(.captions) {
-  background: #f8f9fc;
-  border-color: rgba(0, 0, 0, 0.08);
-  box-shadow: none;
-}
-.room--light .stage :deep(.captions__tools) {
-  background: rgba(0, 0, 0, 0.03);
-  border-color: rgba(0, 0, 0, 0.08);
-  backdrop-filter: none;
-}
-.room--light .stage :deep(.captions__label) {
-  color: #3a4a6a;
-}
-.room--light .stage :deep(.captions__label strong) {
-  color: #1a2540;
-}
-.room--light .stage :deep(.captions__label small) {
-  color: #5a6988;
-}
-.room--light .stage :deep(.dot) {
-  background: #c0c8d8;
-}
-.room--light .stage :deep(.dot--active) {
-  background: #22b87a;
-  box-shadow: 0 0 0 4px rgba(34, 184, 122, 0.15);
-}
-.room--light .stage :deep(.captions__mode-toggle) {
-  border-color: rgba(0, 0, 0, 0.12);
-  color: #5a6988;
-  background: rgba(0, 0, 0, 0.04);
-}
-.room--light .stage :deep(.captions__mode-toggle:hover) {
-  color: #1a2540;
-  border-color: rgba(0, 0, 0, 0.25);
-}
-.room--light .stage :deep(.captions__font button) {
-  border-color: rgba(0, 0, 0, 0.12);
-  color: #3a4a6a;
-  background: rgba(0, 0, 0, 0.04);
-}
-.room--light .stage :deep(.captions__font button:hover:not(:disabled)) {
-  color: #1a2540;
-  border-color: rgba(0, 0, 0, 0.3);
-}
-.room--light .stage :deep(.captions__line) {
-  color: #8090b0;
-}
-.room--light .stage :deep(.captions__line--current) {
-  color: #0d1526;
-  text-shadow: none;
-}
-.room--light .stage :deep(.captions__line--partial) {
-  color: #2a5090;
-}
-.room--light .stage :deep(.captions__waiting) {
-  color: #5a6988;
-  border-color: rgba(0, 0, 0, 0.1);
-  background: rgba(0, 0, 0, 0.03);
-}
-.room--light .topbar {
-  background: rgba(240, 242, 248, 0.92);
-}
-.room--light .control-bar {
-  background: rgba(216, 221, 233, 0.96);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
-}
-.room--light .control-icon {
-  color: #2a3a60;
-  background: rgba(0, 0, 0, 0.07);
-}
-.room--light .ghost,
-.room--light .back {
-  background: rgba(0, 0, 0, 0.04);
-}
-.room--light .back:hover,
-.room--light .ghost:hover {
-  background: rgba(26, 37, 64, 0.1);
-  border-color: rgba(26, 37, 64, 0.25);
-}
-.room--light .mobile-overflow-sheet__action {
-  background: rgba(0, 0, 0, 0.04);
-}
-.room--light .mobile-overflow-sheet__action:hover {
-  background: rgba(0, 0, 0, 0.08);
-}
-.room--light .mobile-overflow-sheet__emojis {
-  background: rgba(0, 0, 0, 0.04);
-}
-.room--light .mobile-overflow-sheet__emoji-btn:hover {
-  background: rgba(0, 0, 0, 0.08);
-  border-color: var(--meeting-border);
-}
-.room--light .mobile-overflow-sheet__cancel {
-  border-color: var(--meeting-border);
-  background: rgba(0, 0, 0, 0.03);
-}
-.room--light .mobile-overflow-sheet__cancel:hover {
-  background: rgba(0, 0, 0, 0.07);
-}
 .room svg {
   width: 20px;
   height: 20px;
@@ -2558,5 +2451,101 @@ function trapPanelFocus(event: KeyboardEvent) {
     bottom: calc(max(8px, env(safe-area-inset-bottom)) + 76px);
     width: auto;
   }
+}
+
+/* ─── Tema claro ─────────────────────────────────────────────────────────── */
+.room--light {
+  --meeting-bg: #f0f2f8;
+  --meeting-surface: #e4e8f0;
+  --meeting-surface-raised: #d8dde9;
+  --meeting-border: rgba(0, 0, 0, 0.12);
+  --meeting-text: #1a2540;
+  --meeting-muted: #5a6988;
+}
+.room--light .topbar {
+  background: rgba(240, 242, 248, 0.92);
+  backdrop-filter: blur(18px);
+}
+.room--light .control-bar {
+  background: rgba(216, 221, 233, 0.96);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+}
+.room--light .control-icon {
+  color: #2a3a60;
+  background: rgba(0, 0, 0, 0.07);
+}
+.room--light .ghost,
+.room--light .back {
+  background: rgba(0, 0, 0, 0.04);
+}
+.room--light .back:hover,
+.room--light .ghost:hover {
+  background: rgba(26, 37, 64, 0.1);
+  border-color: rgba(26, 37, 64, 0.25);
+}
+.room--light .mobile-overflow-sheet__action {
+  background: rgba(0, 0, 0, 0.04);
+}
+.room--light .mobile-overflow-sheet__action:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+.room--light .mobile-overflow-sheet__emojis {
+  background: rgba(0, 0, 0, 0.04);
+}
+.room--light .mobile-overflow-sheet__emoji-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: var(--meeting-border);
+}
+.room--light .mobile-overflow-sheet__cancel {
+  border-color: var(--meeting-border);
+  background: rgba(0, 0, 0, 0.03);
+}
+.room--light .mobile-overflow-sheet__cancel:hover {
+  background: rgba(0, 0, 0, 0.07);
+}
+.room--light .stage :deep(.captions) {
+  background: #f8f9fc;
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: none;
+}
+.room--light .stage :deep(.captions__tools) {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.08);
+  backdrop-filter: none;
+}
+.room--light .stage :deep(.captions__label) { color: #3a4a6a; }
+.room--light .stage :deep(.captions__label strong) { color: #1a2540; }
+.room--light .stage :deep(.captions__label small) { color: #5a6988; }
+.room--light .stage :deep(.dot) { background: #c0c8d8; }
+.room--light .stage :deep(.dot--active) {
+  background: #22b87a;
+  box-shadow: 0 0 0 4px rgba(34, 184, 122, 0.15);
+}
+.room--light .stage :deep(.captions__mode-toggle) {
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #5a6988;
+  background: rgba(0, 0, 0, 0.04);
+}
+.room--light .stage :deep(.captions__mode-toggle:hover) {
+  color: #1a2540;
+  border-color: rgba(0, 0, 0, 0.25);
+}
+.room--light .stage :deep(.captions__font button) {
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #3a4a6a;
+  background: rgba(0, 0, 0, 0.04);
+}
+.room--light .stage :deep(.captions__font button:hover:not(:disabled)) {
+  color: #1a2540;
+  border-color: rgba(0, 0, 0, 0.3);
+}
+.room--light .stage :deep(.captions__line) { color: #8090b0; }
+.room--light .stage :deep(.captions__line--current) { color: #0d1526; text-shadow: none; }
+.room--light .stage :deep(.captions__line--partial) { color: #2a5090; }
+.room--light .stage :deep(.captions__waiting) {
+  color: #5a6988;
+  border-color: rgba(0, 0, 0, 0.1);
+  background: rgba(0, 0, 0, 0.03);
 }
 </style>
