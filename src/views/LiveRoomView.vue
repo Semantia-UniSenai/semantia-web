@@ -2370,20 +2370,20 @@ function trapPanelFocus(event: KeyboardEvent) {
   left: 20px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   pointer-events: none;
-  width: min(340px, calc(100vw - 40px));
+  width: min(280px, calc(100vw - 40px));
 }
 .room-toast {
   pointer-events: auto;
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 10px 8px 10px 13px;
+  gap: 7px;
+  padding: 7px 6px 7px 10px;
   border: 1px solid rgba(202, 216, 244, 0.18);
-  border-radius: 14px;
+  border-radius: 11px;
   background: rgba(15, 24, 40, 0.96);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(12px);
   color: var(--meeting-text);
 }
@@ -2407,20 +2407,20 @@ function trapPanelFocus(event: KeyboardEvent) {
 }
 .room-toast__icon {
   flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
-  font-size: 16px;
+  border-radius: 8px;
+  font-size: 13px;
   background: rgba(255, 255, 255, 0.07);
 }
 .room-toast--hand .room-toast__icon { background: rgba(240, 192, 96, 0.14); }
 .room-toast--chat .room-toast__icon { background: rgba(117, 158, 231, 0.14); }
 .room-toast--join .room-toast__icon { background: rgba(70, 215, 149, 0.14); }
 .room-toast__icon svg {
-  width: 15px;
-  height: 15px;
+  width: 12px;
+  height: 12px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -2434,22 +2434,21 @@ function trapPanelFocus(event: KeyboardEvent) {
 .room-toast__text {
   flex: 1;
   min-width: 0;
-  font: 600 12px var(--body, inherit);
-  line-height: 1.35;
+  font: 600 11px var(--body, inherit);
+  line-height: 1.3;
   overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .room-toast__action {
   flex: 0 0 auto;
-  min-height: 28px;
-  padding: 4px 10px;
+  min-height: 24px;
+  padding: 3px 8px;
   border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 7px;
+  border-radius: 6px;
   background: rgba(255, 255, 255, 0.07);
   color: inherit;
-  font: 700 11px var(--display, inherit);
+  font: 700 10px var(--display, inherit);
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.14s ease;
@@ -2462,12 +2461,12 @@ function trapPanelFocus(event: KeyboardEvent) {
 .room-toast--hand .room-toast__action:hover { background: rgba(240, 192, 96, 0.22); }
 .room-toast__dismiss {
   flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: 7px;
+  border-radius: 6px;
   background: transparent;
   color: var(--meeting-muted);
   cursor: pointer;
@@ -2478,8 +2477,8 @@ function trapPanelFocus(event: KeyboardEvent) {
   color: var(--meeting-text);
 }
 .room-toast__dismiss svg {
-  width: 13px;
-  height: 13px;
+  width: 11px;
+  height: 11px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
