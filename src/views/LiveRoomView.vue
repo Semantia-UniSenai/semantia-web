@@ -665,7 +665,7 @@ function trapPanelFocus(event: KeyboardEvent) {
     @skip="skipContext"
   />
 
-  <div v-if="live.admissionStatus.value === 'waiting'" class="admission-overlay" role="status" aria-live="polite">
+  <div v-if="live.admissionStatus.value === 'waiting'" class="admission-overlay" :class="{ 'room--light': roomTheme === 'light' }" role="status" aria-live="polite">
     <div class="admission-overlay__card">
       <svg aria-hidden="true" viewBox="0 0 24 24" class="admission-overlay__icon"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
       <h2>Aguardando aprovação</h2>
@@ -673,7 +673,7 @@ function trapPanelFocus(event: KeyboardEvent) {
     </div>
   </div>
 
-  <div v-if="live.admissionStatus.value === 'denied'" class="admission-overlay admission-overlay--denied" role="alert">
+  <div v-if="live.admissionStatus.value === 'denied'" class="admission-overlay admission-overlay--denied" :class="{ 'room--light': roomTheme === 'light' }" role="alert">
     <div class="admission-overlay__card">
       <svg aria-hidden="true" viewBox="0 0 24 24" class="admission-overlay__icon"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
       <h2>Acesso não permitido</h2>
@@ -682,7 +682,7 @@ function trapPanelFocus(event: KeyboardEvent) {
     </div>
   </div>
 
-  <div v-if="live.admissionStatus.value === 'removed'" class="admission-overlay admission-overlay--denied" role="alert">
+  <div v-if="live.admissionStatus.value === 'removed'" class="admission-overlay admission-overlay--denied" :class="{ 'room--light': roomTheme === 'light' }" role="alert">
     <div class="admission-overlay__card">
       <svg aria-hidden="true" viewBox="0 0 24 24" class="admission-overlay__icon"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
       <h2>Você foi removido da sala</h2>
@@ -693,6 +693,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   <div
     v-if="confirmRemoveId !== null"
     class="confirm-dialog-backdrop"
+    :class="{ 'room--light': roomTheme === 'light' }"
     role="presentation"
     @click.self="closeConfirmRemove"
     @keydown.esc.prevent="closeConfirmRemove"
@@ -2629,6 +2630,40 @@ function trapPanelFocus(event: KeyboardEvent) {
   color: #5a6988;
   border-color: rgba(0, 0, 0, 0.1);
   background: rgba(0, 0, 0, 0.03);
+}
+
+/* Dialog de confirmação no tema claro */
+.room--light.confirm-dialog-backdrop {
+  background: rgba(180, 190, 210, 0.45);
+}
+.room--light .confirm-dialog {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.14);
+}
+.room--light .confirm-dialog .ghost {
+  border-color: rgba(0, 0, 0, 0.16);
+  color: #3a4a6a;
+}
+.room--light .confirm-dialog .ghost:hover {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.25);
+}
+
+/* Admission overlay no tema claro */
+.room--light.admission-overlay {
+  background: rgba(200, 210, 230, 0.6);
+}
+.room--light .admission-overlay__card {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #1a2540;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+}
+.room--light .admission-overlay__card p { color: #5a6988; }
+.room--light .admission-overlay__card .ghost {
+  border-color: rgba(0, 0, 0, 0.16);
+  color: #3a4a6a;
 }
 
 /* Toasts no tema claro */
