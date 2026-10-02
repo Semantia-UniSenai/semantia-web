@@ -87,6 +87,25 @@ function addToast(type: RoomToast['type'], text: string, participantId?: string)
     toastQueue.value.splice(0, 1)
   }
 }
+
+function playHandSound() {
+  try {
+    const ctx = new AudioContext()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(880, ctx.currentTime)
+    osc.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.15)
+    gain.gain.setValueAtTime(0.18, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.45)
+  } catch {
+    // AudioContext não disponível (ex: SSR ou política do browser)
+  }
+}
 function dismissToast(id: string) {
   const idx = toastQueue.value.findIndex(t => t.id === id)
   if (idx !== -1) {
@@ -238,12 +257,15 @@ watch(() => live.raisedHands.value, (newHands) => {
     return
   }
   const newIds = new Set(newHands.map(h => h.participantId))
+  let hasNew = false
   for (const hand of newHands) {
     if (!knownRaisedHandIds.value.has(hand.participantId)) {
       const name = live.participants.value.find(p => p.participantId === hand.participantId)?.name ?? 'Alguém'
       addToast('hand', `${name} levantou a mão`, hand.participantId)
+      hasNew = true
     }
   }
+  if (hasNew) playHandSound()
   knownRaisedHandIds.value = newIds
 }, { deep: true })
 
@@ -2609,4 +2631,56 @@ function trapPanelFocus(event: KeyboardEvent) {
   border-color: rgba(0, 0, 0, 0.1);
   background: rgba(0, 0, 0, 0.03);
 }
+
+/* Toasts no tema claro */
+.room--light .room-toast {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  color: #1a2540;
+}
+.room--light .room-toast--hand {
+  background: rgba(255, 251, 235, 0.97);
+  border-color: rgba(180, 120, 0, 0.25);
+  color: #6b4200;
+}
+.room--light .room-toast--chat {
+  background: rgba(240, 245, 255, 0.97);
+  border-color: rgba(80, 120, 200, 0.2);
+  color: #1a2540;
+}
+.room--light .room-toast--join {
+  background: rgba(240, 255, 248, 0.97);
+  border-color: rgba(0, 160, 100, 0.2);
+  color: #0a3a22;
+}
+.room--light .room-toast--leave { color: #5a6988; }
+.room--light .room-toast__action {
+  border-color: rgba(0, 0, 0, 0.15);
+  background: rgba(0, 0, 0, 0.05);
+  color: inherit;
+}
+.room--light .room-toast--hand .room-toast__action {
+  border-color: rgba(160, 100, 0, 0.25);
+  background: rgba(200, 130, 0, 0.08);
+}
+.room--light .room-toast__action:hover { background: rgba(0, 0, 0, 0.1); }
+.room--light .room-toast--hand .room-toast__action:hover { background: rgba(200, 130, 0, 0.16); }
+.room--light .room-toast__dismiss { color: #8090b0; }
+.room--light .room-toast__dismiss:hover { background: rgba(0, 0, 0, 0.06); color: #1a2540; }
+
+/* Hand-banner no tema claro */
+.room--light .hand-banner {
+  background: rgba(255, 251, 235, 0.97);
+  border-color: rgba(180, 120, 0, 0.3);
+  color: #6b4200;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+}
+.room--light .hand-banner__text small { color: rgba(107, 66, 0, 0.65); }
+.room--light .hand-banner__btn {
+  border-color: rgba(160, 100, 0, 0.3);
+  background: rgba(200, 130, 0, 0.1);
+  color: #6b4200;
+}
+.room--light .hand-banner__btn:hover { background: rgba(200, 130, 0, 0.2); }
 </style>
