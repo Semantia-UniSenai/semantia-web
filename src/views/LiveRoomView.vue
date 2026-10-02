@@ -1848,8 +1848,18 @@ function trapPanelFocus(event: KeyboardEvent) {
     width: 44px;
     padding: 0;
   }
+  .confirm-dialog .ghost,
+  .confirm-dialog .danger,
+  .admission-overlay__card .ghost {
+    width: auto;
+    padding: 9px 16px;
+  }
   .danger span {
     display: none;
+  }
+  .confirm-dialog .danger span,
+  .admission-overlay__card .ghost span {
+    display: inline;
   }
   .identity strong {
     max-width: 46vw;
