@@ -876,6 +876,22 @@ function trapPanelFocus(event: KeyboardEvent) {
             :raised-participant-ids="raisedParticipantIds"
             @resume-audio="resumeConferenceAudio"
           />
+
+          <Transition name="hand-banner-anim">
+            <div
+              v-if="myHand && !live.canManage.value && !live.ended.value"
+              class="hand-banner"
+              role="status"
+              aria-live="polite"
+            >
+              <span class="hand-banner__icon" aria-hidden="true">✋</span>
+              <div class="hand-banner__text">
+                <strong>Sua mão está levantada</strong>
+                <small>Aguarde o anfitrião chamar você</small>
+              </div>
+              <button type="button" class="hand-banner__btn" @click="live.lowerHand()">Baixar</button>
+            </div>
+          </Transition>
         </section>
 
         <button
@@ -2303,6 +2319,10 @@ function trapPanelFocus(event: KeyboardEvent) {
   80% { opacity: 1; }
   100% { opacity: 0; }
 }
+.hand-banner-anim-enter-active { transition: opacity 0.22s ease, transform 0.22s ease; }
+.hand-banner-anim-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }
+.hand-banner-anim-enter-from  { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+.hand-banner-anim-leave-to    { opacity: 0; transform: translateX(-50%) translateY(-6px); }
 
 /* Badge na fila */
 .admission-badge {
@@ -2346,8 +2366,9 @@ function trapPanelFocus(event: KeyboardEvent) {
   color: var(--meeting-text);
 }
 .room-toast--hand {
-  border-color: rgba(240, 192, 96, 0.35);
-  background: rgba(42, 28, 4, 0.97);
+  border-color: rgba(240, 192, 96, 0.4);
+  background: rgba(26, 18, 4, 0.95);
+  color: #ffe9a0;
 }
 .room-toast--chat {
   border-color: rgba(117, 158, 231, 0.3);
@@ -2405,13 +2426,18 @@ function trapPanelFocus(event: KeyboardEvent) {
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 7px;
   background: rgba(255, 255, 255, 0.07);
-  color: var(--meeting-text);
+  color: inherit;
   font: 700 11px var(--display, inherit);
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.14s ease;
 }
+.room-toast--hand .room-toast__action {
+  border-color: rgba(240, 192, 96, 0.35);
+  background: rgba(240, 192, 96, 0.1);
+}
 .room-toast__action:hover { background: rgba(255, 255, 255, 0.13); }
+.room-toast--hand .room-toast__action:hover { background: rgba(240, 192, 96, 0.22); }
 .room-toast__dismiss {
   flex: 0 0 auto;
   width: 26px;
