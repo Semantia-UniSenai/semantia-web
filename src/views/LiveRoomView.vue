@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Transition, TransitionGroup, computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { patchSessionSettings, updateSessionContext, type AudienceContext } from '../api/sessions-context'
 import AdmissionQueue from '../components/live/AdmissionQueue.vue'
@@ -66,18 +66,53 @@ let admissionArrivalTimer: ReturnType<typeof setTimeout> | null = null
 const chatReadCount = ref(0)
 const unreadChatCount = computed(() => Math.max(0, live.chat.value.length - chatReadCount.value))
 
-const raisedHandNewArrival = ref(false)
-const showRaisedHandBanner = computed(
-  () => live.canManage.value && raisedHandNewArrival.value && panel.value !== 'participants',
-)
-const latestRaisedHandName = computed(() => {
-  const hands = live.raisedHands.value
-  if (!hands.length) return ''
-  const latest = hands[hands.length - 1]
-  return live.participants.value.find(p => p.participantId === latest.participantId)?.name ?? ''
-})
-const raisedHandsExtraCount = computed(() => Math.max(0, live.raisedHands.value.length - 1))
-let raisedHandArrivalTimer: ReturnType<typeof setTimeout> | null = null
+interface RoomToast {
+  id: string
+  type: 'hand' | 'chat' | 'join' | 'leave'
+  text: string
+  participantId?: string
+  timer: ReturnType<typeof setTimeout>
+}
+const toastQueue = ref<RoomToast[]>([])
+const knownRaisedHandIds = ref(new Set<string>())
+const participantsInitialized = ref(false)
+
+function addToast(type: RoomToast['type'], text: string, participantId?: string) {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const timer = window.setTimeout(() => dismissToast(id), 5000)
+  toastQueue.value.push({ id, type, text, participantId, timer })
+  if (toastQueue.value.length > 4) {
+    const oldest = toastQueue.value[0]!
+    clearTimeout(oldest.timer)
+    toastQueue.value.splice(0, 1)
+  }
+}
+
+function playHandSound() {
+  try {
+    const ctx = new AudioContext()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(880, ctx.currentTime)
+    osc.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.15)
+    gain.gain.setValueAtTime(0.18, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.45)
+  } catch {
+    // AudioContext não disponível (ex: SSR ou política do browser)
+  }
+}
+function dismissToast(id: string) {
+  const idx = toastQueue.value.findIndex(t => t.id === id)
+  if (idx !== -1) {
+    clearTimeout(toastQueue.value[idx]!.timer)
+    toastQueue.value.splice(idx, 1)
+  }
+}
 
 const meetingElapsed = ref(0)
 let meetingTimerInterval: ReturnType<typeof setInterval> | null = null
@@ -101,6 +136,40 @@ watch(() => live.session.value, (session) => {
 }, { immediate: true })
 
 const mobileOverflowOpen = ref(false)
+const reactionsTrayOpen = ref(false)
+const roomTheme = ref<'dark' | 'light'>((localStorage.getItem('room-theme') as 'dark' | 'light') || 'dark')
+
+function toggleTheme() {
+  roomTheme.value = roomTheme.value === 'dark' ? 'light' : 'dark'
+  localStorage.setItem('room-theme', roomTheme.value)
+}
+let reactionsTrayTimer: ReturnType<typeof setTimeout> | null = null
+
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '🎉', '🙌']
+
+interface FloatingReaction {
+  id: string
+  emoji: string
+  name: string
+  left: number
+}
+const floatingReactions = ref<FloatingReaction[]>([])
+
+function toggleReactionsTray() {
+  reactionsTrayOpen.value = !reactionsTrayOpen.value
+  if (reactionsTrayOpen.value) {
+    if (reactionsTrayTimer) clearTimeout(reactionsTrayTimer)
+    reactionsTrayTimer = window.setTimeout(() => {
+      reactionsTrayOpen.value = false
+    }, 6000)
+  }
+}
+
+async function sendReaction(emoji: string) {
+  reactionsTrayOpen.value = false
+  if (reactionsTrayTimer) clearTimeout(reactionsTrayTimer)
+  await live.sendReaction(emoji)
+}
 
 function openMobileOverflow() {
   mobileOverflowOpen.value = true
@@ -164,8 +233,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   panelMediaQuery?.removeEventListener('change', syncPanelMode)
   if (admissionArrivalTimer !== null) clearTimeout(admissionArrivalTimer)
-  if (raisedHandArrivalTimer !== null) clearTimeout(raisedHandArrivalTimer)
+  for (const t of toastQueue.value) clearTimeout(t.timer)
   if (meetingTimerInterval !== null) clearInterval(meetingTimerInterval)
+  if (reactionsTrayTimer !== null) clearTimeout(reactionsTrayTimer)
   restoreConferenceMicrophoneAfterTest = false
   restoreConferenceCameraAfterTest = false
   void audioInput.stopTest()
@@ -181,23 +251,57 @@ watch(() => live.admissionQueue.value.length, (newLen, oldLen) => {
     })
   }
 })
-watch(() => live.raisedHands.value.length, (newLen, oldLen) => {
-  if (newLen === 0) {
-    raisedHandNewArrival.value = false
-    if (raisedHandArrivalTimer !== null) { clearTimeout(raisedHandArrivalTimer); raisedHandArrivalTimer = null }
+watch(() => live.raisedHands.value, (newHands) => {
+  if (!live.canManage.value || panel.value === 'participants') {
+    knownRaisedHandIds.value = new Set(newHands.map(h => h.participantId))
     return
   }
-  if (newLen > (oldLen ?? 0) && live.canManage.value) {
-    raisedHandNewArrival.value = false
-    void nextTick(() => {
-      raisedHandNewArrival.value = true
-      if (raisedHandArrivalTimer !== null) clearTimeout(raisedHandArrivalTimer)
-      raisedHandArrivalTimer = window.setTimeout(() => { raisedHandNewArrival.value = false }, 5000)
-    })
+  const newIds = new Set(newHands.map(h => h.participantId))
+  let hasNew = false
+  for (const hand of newHands) {
+    if (!knownRaisedHandIds.value.has(hand.participantId)) {
+      const name = live.participants.value.find(p => p.participantId === hand.participantId)?.name ?? 'Alguém'
+      addToast('hand', `${name} levantou a mão`, hand.participantId)
+      hasNew = true
+    }
   }
-})
-watch(live.chat, () => {
-  if (panel.value === 'chat') chatReadCount.value = live.chat.value.length
+  if (hasNew) playHandSound()
+  knownRaisedHandIds.value = newIds
+}, { deep: true })
+
+watch(() => live.participants.value, (newParts, oldParts) => {
+  if (!participantsInitialized.value) {
+    participantsInitialized.value = true
+    return
+  }
+  if (!oldParts) return
+  const oldIds = new Set(oldParts.map(p => p.participantId))
+  const newIds = new Set(newParts.map(p => p.participantId))
+  for (const p of newParts) {
+    if (!oldIds.has(p.participantId) && p.participantId !== live.currentParticipantId.value) {
+      addToast('join', `${p.name} entrou na reunião`)
+    }
+  }
+  for (const p of oldParts) {
+    if (!newIds.has(p.participantId) && p.participantId !== live.currentParticipantId.value) {
+      addToast('leave', `${p.name} saiu da reunião`)
+    }
+  }
+}, { deep: true })
+
+watch(live.chat, (newChat, oldChat) => {
+  if (panel.value === 'chat') {
+    chatReadCount.value = newChat.length
+    return
+  }
+  if (oldChat && newChat.length > oldChat.length) {
+    const latest = newChat[newChat.length - 1]
+    if (latest && latest.participantId !== live.currentParticipantId.value) {
+      const senderName = live.participants.value.find(p => p.participantId === latest.participantId)?.name ?? 'Alguém'
+      const preview = latest.text.length > 50 ? latest.text.slice(0, 50) + '…' : latest.text
+      addToast('chat', `${senderName}: ${preview}`)
+    }
+  }
 }, { deep: true })
 watch(() => live.ended.value, (ended) => {
   if (ended) {
@@ -206,6 +310,23 @@ watch(() => live.ended.value, (ended) => {
     restoreConferenceCameraAfterTest = false
     void audioInput.stopTest()
     void videoInput.stopTest()
+  }
+})
+
+watch(() => live.reactions.value.length, (newLen, oldLen) => {
+  if (newLen <= (oldLen ?? 0)) return
+  const latest = live.reactions.value[newLen - 1]!
+  const { id, emoji, name } = latest
+  const left = 5 + Math.random() * 70
+  floatingReactions.value.push({ id, emoji, name, left })
+  window.setTimeout(() => {
+    floatingReactions.value = floatingReactions.value.filter(r => r.id !== id)
+  }, 3800)
+})
+
+watch(() => live.mutedByHostAt.value, (ts) => {
+  if (ts && conference.microphoneEnabled.value) {
+    void toggleConferenceMicrophone()
   }
 })
 watch(
@@ -544,7 +665,7 @@ function trapPanelFocus(event: KeyboardEvent) {
     @skip="skipContext"
   />
 
-  <div v-if="live.admissionStatus.value === 'waiting'" class="admission-overlay" role="status" aria-live="polite">
+  <div v-if="live.admissionStatus.value === 'waiting'" class="admission-overlay" :class="{ 'room--light': roomTheme === 'light' }" role="status" aria-live="polite">
     <div class="admission-overlay__card">
       <svg aria-hidden="true" viewBox="0 0 24 24" class="admission-overlay__icon"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
       <h2>Aguardando aprovação</h2>
@@ -552,7 +673,7 @@ function trapPanelFocus(event: KeyboardEvent) {
     </div>
   </div>
 
-  <div v-if="live.admissionStatus.value === 'denied'" class="admission-overlay admission-overlay--denied" role="alert">
+  <div v-if="live.admissionStatus.value === 'denied'" class="admission-overlay admission-overlay--denied" :class="{ 'room--light': roomTheme === 'light' }" role="alert">
     <div class="admission-overlay__card">
       <svg aria-hidden="true" viewBox="0 0 24 24" class="admission-overlay__icon"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
       <h2>Acesso não permitido</h2>
@@ -561,7 +682,7 @@ function trapPanelFocus(event: KeyboardEvent) {
     </div>
   </div>
 
-  <div v-if="live.admissionStatus.value === 'removed'" class="admission-overlay admission-overlay--denied" role="alert">
+  <div v-if="live.admissionStatus.value === 'removed'" class="admission-overlay admission-overlay--denied" :class="{ 'room--light': roomTheme === 'light' }" role="alert">
     <div class="admission-overlay__card">
       <svg aria-hidden="true" viewBox="0 0 24 24" class="admission-overlay__icon"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
       <h2>Você foi removido da sala</h2>
@@ -572,6 +693,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   <div
     v-if="confirmRemoveId !== null"
     class="confirm-dialog-backdrop"
+    :class="{ 'room--light': roomTheme === 'light' }"
     role="presentation"
     @click.self="closeConfirmRemove"
     @keydown.esc.prevent="closeConfirmRemove"
@@ -595,7 +717,7 @@ function trapPanelFocus(event: KeyboardEvent) {
     </div>
   </div>
 
-  <main class="room" :class="{ 'room--panel-open': panel }">
+  <main class="room" :class="{ 'room--panel-open': panel, 'room--light': roomTheme === 'light' }">
     <a class="skip-link" href="#captions-main">Ir para a legenda</a>
     <header class="topbar" :inert="isCompactPanel && !!panel">
       <button class="back" type="button" aria-label="Sair da reunião" @click="leave">
@@ -612,6 +734,17 @@ function trapPanelFocus(event: KeyboardEvent) {
         <small>{{ live.session.value?.roomName }}</small>
       </div>
       <div class="topbar__actions">
+        <button
+          v-if="!live.ended.value"
+          class="ghost"
+          type="button"
+          :title="roomTheme === 'dark' ? 'Mudar para tema claro' : 'Mudar para tema escuro'"
+          @click="toggleTheme"
+        >
+          <svg v-if="roomTheme === 'dark'" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          <svg v-else aria-hidden="true" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <span>{{ roomTheme === 'dark' ? 'Claro' : 'Escuro' }}</span>
+        </button>
         <button v-if="live.canManage.value && !live.ended.value" class="ghost" type="button" @click="copyInvite">
           <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1.1l2-2A5 5 0 0 0 12 4l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>
           <span>{{ copied ? 'Link copiado' : 'Convidar' }}</span>
@@ -629,6 +762,16 @@ function trapPanelFocus(event: KeyboardEvent) {
         </button>
         <button
           v-if="live.canManage.value && !live.ended.value"
+          class="ghost"
+          type="button"
+          title="Silenciar todos os participantes"
+          @click="live.muteAll()"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path d="M4 4l16 16"/></svg>
+          <span>Silenciar todos</span>
+        </button>
+        <button
+          v-if="live.canManage.value && !live.ended.value"
           class="danger"
           type="button"
           :aria-label="confirmingEnd ? 'Confirmar encerramento' : 'Encerrar reunião'"
@@ -639,7 +782,7 @@ function trapPanelFocus(event: KeyboardEvent) {
         </button>
       </div>
       <button
-        v-if="live.canManage.value && !live.ended.value"
+        v-if="live.session.value && !live.ended.value"
         class="topbar__overflow"
         type="button"
         aria-label="Mais opções da reunião"
@@ -665,20 +808,61 @@ function trapPanelFocus(event: KeyboardEvent) {
       </div>
       <div v-if="live.ended.value" class="ended-banner" role="status">Reunião encerrada. O conteúdo está disponível somente para leitura conforme a retenção configurada.</div>
 
-      <div
-        v-if="showRaisedHandBanner"
-        class="hand-banner hand-banner--new"
-        role="alert"
-        aria-live="assertive"
-        aria-atomic="true"
-      >
-        <span aria-hidden="true" class="hand-banner__icon">✋</span>
-        <span class="hand-banner__text">
-          <strong>{{ latestRaisedHandName || 'Alguém' }} levantou a mão</strong>
-          <small v-if="raisedHandsExtraCount > 0">+ {{ raisedHandsExtraCount }} outros</small>
-        </span>
-        <button type="button" class="hand-banner__btn" @click="togglePanel('participants')">Ver</button>
-      </div>
+      <TransitionGroup tag="div" name="room-toast" class="toast-queue" aria-live="polite" aria-atomic="false">
+        <div
+          v-for="toast in toastQueue"
+          :key="toast.id"
+          class="room-toast"
+          :class="`room-toast--${toast.type}`"
+          role="status"
+        >
+          <span class="room-toast__icon" aria-hidden="true">
+            <template v-if="toast.type === 'hand'">✋</template>
+            <template v-else-if="toast.type === 'chat'">
+              <svg viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4V5Z"/></svg>
+            </template>
+            <template v-else-if="toast.type === 'join'">
+              <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM19 8v6M22 11h-6"/></svg>
+            </template>
+            <template v-else>
+              <svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 11h-6"/></svg>
+            </template>
+          </span>
+          <span class="room-toast__text">{{ toast.text }}</span>
+          <button
+            v-if="toast.type === 'hand' && live.canManage.value && toast.participantId"
+            type="button"
+            class="room-toast__action"
+            @click="live.lowerParticipantHand(toast.participantId!); dismissToast(toast.id)"
+          >Baixar</button>
+          <button
+            v-else-if="toast.type === 'chat'"
+            type="button"
+            class="room-toast__action"
+            @click="togglePanel('chat'); dismissToast(toast.id)"
+          >Ver</button>
+          <button
+            type="button"
+            class="room-toast__dismiss"
+            aria-label="Fechar notificação"
+            @click="dismissToast(toast.id)"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </TransitionGroup>
+
+      <TransitionGroup tag="div" name="float-reaction" class="floating-reactions" aria-hidden="true">
+        <div
+          v-for="r in floatingReactions"
+          :key="r.id"
+          class="floating-reaction"
+          :style="{ left: r.left + '%' }"
+        >
+          <span class="floating-reaction__emoji">{{ r.emoji }}</span>
+          <span class="floating-reaction__name">{{ r.name }}</span>
+        </div>
+      </TransitionGroup>
 
       <div
         v-if="showAdmissionBanner"
@@ -715,6 +899,22 @@ function trapPanelFocus(event: KeyboardEvent) {
             :raised-participant-ids="raisedParticipantIds"
             @resume-audio="resumeConferenceAudio"
           />
+
+          <Transition name="hand-banner-anim">
+            <div
+              v-if="myHand && !live.canManage.value && !live.ended.value"
+              class="hand-banner"
+              role="status"
+              aria-live="polite"
+            >
+              <span class="hand-banner__icon" aria-hidden="true">✋</span>
+              <div class="hand-banner__text">
+                <strong>Sua mão está levantada</strong>
+                <small>Aguarde o anfitrião chamar você</small>
+              </div>
+              <button type="button" class="hand-banner__btn" @click="live.lowerHand()">Baixar</button>
+            </div>
+          </Transition>
         </section>
 
         <button
@@ -846,6 +1046,34 @@ function trapPanelFocus(event: KeyboardEvent) {
           <span class="control-icon" aria-hidden="true">✋</span>
           <span class="control-copy"><strong>{{ myHand ? 'Baixar mão' : 'Levantar mão' }}</strong><small>{{ myHand ? 'Sinal ativo' : 'Pedir a palavra' }}</small></span>
         </button>
+        <div v-if="!live.ended.value" class="reaction-ctrl">
+          <button
+            class="meeting-control"
+            :class="{ 'meeting-control--active': reactionsTrayOpen }"
+            type="button"
+            :aria-pressed="reactionsTrayOpen"
+            aria-label="Abrir painel de reações"
+            @click="toggleReactionsTray"
+          >
+            <span class="control-icon" aria-hidden="true">😊</span>
+            <span class="control-copy">
+              <strong>Reagir</strong>
+              <small>Reações</small>
+            </span>
+          </button>
+          <Transition name="reaction-tray">
+            <div v-if="reactionsTrayOpen" class="reaction-tray" role="toolbar" aria-label="Escolha uma reação">
+              <button
+                v-for="emoji in REACTION_EMOJIS"
+                :key="emoji"
+                type="button"
+                class="reaction-tray__btn"
+                :aria-label="emoji"
+                @click="sendReaction(emoji)"
+              >{{ emoji }}</button>
+            </div>
+          </Transition>
+        </div>
         <button
           ref="chatTrigger"
           class="meeting-control"
@@ -879,7 +1107,7 @@ function trapPanelFocus(event: KeyboardEvent) {
       </nav>
 
       <div
-        v-if="mobileOverflowOpen && live.canManage.value && !live.ended.value"
+        v-if="mobileOverflowOpen && live.session.value && !live.ended.value"
         class="mobile-overflow-backdrop"
         role="presentation"
         @click.self="closeMobileOverflow"
@@ -894,20 +1122,31 @@ function trapPanelFocus(event: KeyboardEvent) {
         >
           <div class="mobile-overflow-sheet__handle" aria-hidden="true"></div>
           <p class="mobile-overflow-sheet__title">Reunião</p>
-          <button type="button" class="mobile-overflow-sheet__action" @click="copyInviteAndClose">
-            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1.1l2-2A5 5 0 0 0 12 4l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>
-            {{ copied ? 'Link copiado!' : 'Convidar' }}
-          </button>
+
+          <div class="mobile-overflow-sheet__emojis">
+            <p class="mobile-overflow-sheet__emojis-label">Reagir</p>
+            <div class="mobile-overflow-sheet__emoji-row">
+              <button
+                v-for="emoji in REACTION_EMOJIS"
+                :key="emoji"
+                type="button"
+                class="mobile-overflow-sheet__emoji-btn"
+                :aria-label="emoji"
+                @click="sendReaction(emoji); closeMobileOverflow()"
+              >{{ emoji }}</button>
+            </div>
+          </div>
+
           <button
             type="button"
             class="mobile-overflow-sheet__action"
-            :class="{ 'mobile-overflow-sheet__action--active': live.session.value?.requiresApproval }"
-            :aria-pressed="live.session.value?.requiresApproval"
-            @click="toggleApproval"
+            @click="toggleTheme(); closeMobileOverflow()"
           >
-            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-            {{ live.session.value?.requiresApproval ? 'Aprovação ativa' : 'Sala aberta' }}
+            <svg v-if="roomTheme === 'dark'" aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            <svg v-else aria-hidden="true" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            {{ roomTheme === 'dark' ? 'Tema claro' : 'Tema escuro' }}
           </button>
+
           <button
             v-if="live.session.value"
             type="button"
@@ -917,10 +1156,32 @@ function trapPanelFocus(event: KeyboardEvent) {
             <svg aria-hidden="true" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/><circle cx="9" cy="9" r="2"/><path d="M20 4v6m-3-3h6"/></svg>
             Câmera e microfone
           </button>
-          <button type="button" class="mobile-overflow-sheet__action mobile-overflow-sheet__action--danger" @click="end">
-            <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
-            {{ confirmingEnd ? 'Confirmar encerramento' : 'Encerrar reunião' }}
-          </button>
+
+          <template v-if="live.canManage.value">
+            <button type="button" class="mobile-overflow-sheet__action" @click="copyInviteAndClose">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1.1l2-2A5 5 0 0 0 12 4l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>
+              {{ copied ? 'Link copiado!' : 'Convidar' }}
+            </button>
+            <button
+              type="button"
+              class="mobile-overflow-sheet__action"
+              :class="{ 'mobile-overflow-sheet__action--active': live.session.value?.requiresApproval }"
+              :aria-pressed="live.session.value?.requiresApproval"
+              @click="toggleApproval"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
+              {{ live.session.value?.requiresApproval ? 'Aprovação ativa' : 'Sala aberta' }}
+            </button>
+            <button type="button" class="mobile-overflow-sheet__action" @click="live.muteAll(); closeMobileOverflow()">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path d="M4 4l16 16"/></svg>
+              Silenciar todos
+            </button>
+            <button type="button" class="mobile-overflow-sheet__action mobile-overflow-sheet__action--danger" @click="end">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+              {{ confirmingEnd ? 'Confirmar encerramento' : 'Encerrar reunião' }}
+            </button>
+          </template>
+
           <button type="button" class="mobile-overflow-sheet__cancel" @click="closeMobileOverflow">Cancelar</button>
         </div>
       </div>
@@ -1057,6 +1318,8 @@ function trapPanelFocus(event: KeyboardEvent) {
   min-height: 0;
   padding: 0;
   overflow: hidden;
+  background: var(--meeting-bg);
+  color: var(--meeting-text);
 }
 .stage > :first-child {
   flex: 1;
@@ -1585,8 +1848,18 @@ function trapPanelFocus(event: KeyboardEvent) {
     width: 44px;
     padding: 0;
   }
+  .confirm-dialog .ghost,
+  .confirm-dialog .danger,
+  .admission-overlay__card .ghost {
+    width: auto;
+    padding: 9px 16px;
+  }
   .danger span {
     display: none;
+  }
+  .confirm-dialog .danger span,
+  .admission-overlay__card .ghost span {
+    display: inline;
   }
   .identity strong {
     max-width: 46vw;
@@ -1683,7 +1956,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   border: 1px solid var(--meeting-border);
   border-bottom: 0;
   border-radius: 20px 20px 0 0;
-  background: #141e32;
+  background: var(--meeting-surface-raised);
   box-shadow: 0 -20px 48px rgba(0, 0, 0, 0.48);
   animation: meeting-sheet-in 0.2s ease-out;
 }
@@ -1692,7 +1965,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   height: 4px;
   margin: 8px auto 2px;
   border-radius: 999px;
-  background: rgba(202, 216, 244, 0.22);
+  background: var(--meeting-border);
 }
 .mobile-overflow-sheet__title {
   padding: 0 4px 2px;
@@ -1736,6 +2009,44 @@ function trapPanelFocus(event: KeyboardEvent) {
   border-color: rgba(109, 222, 178, 0.35);
   color: #7fe8c0;
   background: rgba(109, 222, 178, 0.08);
+}
+.mobile-overflow-sheet__emojis {
+  padding: 4px 14px 8px;
+  border: 1px solid var(--meeting-border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+.mobile-overflow-sheet__emojis-label {
+  margin: 0 0 8px;
+  color: var(--meeting-muted);
+  font: 750 10px var(--body);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.mobile-overflow-sheet__emoji-row {
+  display: flex;
+  gap: 6px;
+}
+.mobile-overflow-sheet__emoji-btn {
+  flex: 1;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+}
+.mobile-overflow-sheet__emoji-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--meeting-border);
+  transform: scale(1.15);
+}
+.mobile-overflow-sheet__emoji-btn:active {
+  transform: scale(1.05);
 }
 .mobile-overflow-sheet__cancel {
   min-height: 48px;
@@ -1795,6 +2106,109 @@ function trapPanelFocus(event: KeyboardEvent) {
 @media (prefers-reduced-motion: reduce) {
   :global(body:has(.room) [vw].enabled) {
     transition: none;
+  }
+}
+
+/* Reactions tray */
+.reaction-ctrl {
+  position: relative;
+}
+@media (max-width: 1023px) {
+  .reaction-ctrl {
+    display: none;
+  }
+}
+.meeting-control--active .control-icon {
+  background: rgba(117, 158, 231, 0.2);
+  color: #90b8f8;
+}
+.reaction-tray {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 5px;
+  padding: 7px;
+  border: 1px solid var(--meeting-border);
+  border-radius: 18px;
+  background: rgba(15, 22, 40, 0.97);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(14px);
+  white-space: nowrap;
+}
+.reaction-tray__btn {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+}
+.reaction-tray__btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--meeting-border);
+  transform: scale(1.18);
+}
+.reaction-tray__btn:active {
+  transform: scale(1.05);
+}
+.reaction-tray-enter-active { transition: opacity 0.15s ease, transform 0.15s ease; }
+.reaction-tray-leave-active { transition: opacity 0.12s ease, transform 0.12s ease; }
+.reaction-tray-enter-from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+.reaction-tray-leave-to   { opacity: 0; transform: translateX(-50%) translateY(4px); }
+
+/* Floating reaction animations */
+.floating-reactions {
+  position: fixed;
+  z-index: 25;
+  bottom: calc(max(10px, env(safe-area-inset-bottom)) + 90px);
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+.floating-reaction {
+  position: absolute;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  animation: reaction-float 3.8s ease-out forwards;
+}
+.floating-reaction__emoji {
+  font-size: 32px;
+  line-height: 1;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.45));
+}
+.floating-reaction__name {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(8, 13, 25, 0.72);
+  color: rgba(244, 247, 255, 0.85);
+  font: 600 10px var(--body, inherit);
+  white-space: nowrap;
+  backdrop-filter: blur(4px);
+}
+@keyframes reaction-float {
+  0%   { transform: translateY(0);      opacity: 1; }
+  70%  { opacity: 1; }
+  100% { transform: translateY(-180px); opacity: 0; }
+}
+.float-reaction-enter-active,
+.float-reaction-leave-active { transition: none; }
+.float-reaction-enter-from,
+.float-reaction-leave-to { opacity: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .floating-reaction {
+    animation: none;
+    opacity: 0;
   }
 }
 
@@ -1938,6 +2352,10 @@ function trapPanelFocus(event: KeyboardEvent) {
   80% { opacity: 1; }
   100% { opacity: 0; }
 }
+.hand-banner-anim-enter-active { transition: opacity 0.22s ease, transform 0.22s ease; }
+.hand-banner-anim-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }
+.hand-banner-anim-enter-from  { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+.hand-banner-anim-leave-to    { opacity: 0; transform: translateX(-50%) translateY(-6px); }
 
 /* Badge na fila */
 .admission-badge {
@@ -1954,4 +2372,359 @@ function trapPanelFocus(event: KeyboardEvent) {
   font-weight: 850;
   vertical-align: middle;
 }
+
+/* Toast queue — estilo Google Meet */
+.toast-queue {
+  position: fixed;
+  z-index: 30;
+  bottom: calc(max(10px, env(safe-area-inset-bottom)) + 80px);
+  left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+  width: min(280px, calc(100vw - 40px));
+}
+.room-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 6px 7px 10px;
+  border: 1px solid rgba(202, 216, 244, 0.18);
+  border-radius: 11px;
+  background: rgba(15, 24, 40, 0.96);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(12px);
+  color: var(--meeting-text);
+}
+.room-toast--hand {
+  border-color: rgba(240, 192, 96, 0.4);
+  background: rgba(26, 18, 4, 0.95);
+  color: #ffe9a0;
+}
+.room-toast--chat {
+  border-color: rgba(117, 158, 231, 0.3);
+  background: rgba(12, 22, 42, 0.97);
+}
+.room-toast--join {
+  border-color: rgba(70, 215, 149, 0.3);
+  background: rgba(8, 30, 22, 0.97);
+}
+.room-toast--leave {
+  border-color: rgba(160, 160, 180, 0.2);
+  background: rgba(18, 22, 34, 0.97);
+  color: var(--meeting-muted);
+}
+.room-toast__icon {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.07);
+}
+.room-toast--hand .room-toast__icon { background: rgba(240, 192, 96, 0.14); }
+.room-toast--chat .room-toast__icon { background: rgba(117, 158, 231, 0.14); }
+.room-toast--join .room-toast__icon { background: rgba(70, 215, 149, 0.14); }
+.room-toast__icon svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.room-toast--hand .room-toast__icon svg { color: #f0c060; }
+.room-toast--chat .room-toast__icon svg { color: #90b8f8; }
+.room-toast--join .room-toast__icon svg { color: #6ee7b0; }
+.room-toast--leave .room-toast__icon svg { color: #8895b3; }
+.room-toast__text {
+  flex: 1;
+  min-width: 0;
+  font: 600 11px var(--body, inherit);
+  line-height: 1.3;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.room-toast__action {
+  flex: 0 0 auto;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.07);
+  color: inherit;
+  font: 700 10px var(--display, inherit);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s ease;
+}
+.room-toast--hand .room-toast__action {
+  border-color: rgba(240, 192, 96, 0.35);
+  background: rgba(240, 192, 96, 0.1);
+}
+.room-toast__action:hover { background: rgba(255, 255, 255, 0.13); }
+.room-toast--hand .room-toast__action:hover { background: rgba(240, 192, 96, 0.22); }
+.room-toast__dismiss {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--meeting-muted);
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.room-toast__dismiss:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--meeting-text);
+}
+.room-toast__dismiss svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* Animação de entrada/saída dos toasts */
+.room-toast-enter-active { transition: opacity 0.2s ease, transform 0.2s ease; }
+.room-toast-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }
+.room-toast-enter-from { opacity: 0; transform: translateY(10px); }
+.room-toast-leave-to   { opacity: 0; transform: translateY(6px); }
+
+@media (max-width: 620px) {
+  .toast-queue {
+    left: 10px;
+    right: 10px;
+    bottom: calc(max(8px, env(safe-area-inset-bottom)) + 76px);
+    width: auto;
+  }
+}
+
+/* ─── Tema claro ─────────────────────────────────────────────────────────── */
+/* Side panel (chat + participants) */
+.room--light .side {
+  background: var(--meeting-surface);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+}
+.room--light .side__header {
+  background: rgba(0, 0, 0, 0.02);
+}
+.room--light .side__header button {
+  background: rgba(0, 0, 0, 0.04);
+}
+.room--light .side__header button:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--meeting-text);
+}
+.room--light .people article {
+  background: rgba(0, 0, 0, 0.03);
+}
+/* ConferenceControls (câmera/mic no control bar) */
+.room--light .control-bar :deep(.conference-control) {
+  color: #1a2540;
+}
+.room--light .control-bar :deep(.conference-control:hover:not(:disabled)),
+.room--light .control-bar :deep(.conference-control.active) {
+  border-color: rgba(0, 0, 0, 0.12);
+  background: rgba(0, 0, 0, 0.06);
+}
+.room--light .control-bar :deep(.conference-control__icon) {
+  color: #2a3a60;
+  background: rgba(0, 0, 0, 0.07);
+}
+.room--light .control-bar :deep(.conference-control.active .conference-control__icon) {
+  color: #10232f;
+  background: #55c8ca;
+}
+.room--light {
+  --meeting-bg: #f0f2f8;
+  --meeting-surface: #e4e8f0;
+  --meeting-surface-raised: #d8dde9;
+  --meeting-border: rgba(0, 0, 0, 0.12);
+  --meeting-text: #1a2540;
+  --meeting-muted: #5a6988;
+}
+.room--light .topbar {
+  background: rgba(240, 242, 248, 0.92);
+  backdrop-filter: blur(18px);
+}
+.room--light .control-bar {
+  background: rgba(216, 221, 233, 0.96);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+}
+.room--light .control-icon {
+  color: #2a3a60;
+  background: rgba(0, 0, 0, 0.07);
+}
+.room--light .ghost,
+.room--light .back {
+  background: rgba(0, 0, 0, 0.04);
+}
+.room--light .back:hover,
+.room--light .ghost:hover {
+  background: rgba(26, 37, 64, 0.1);
+  border-color: rgba(26, 37, 64, 0.25);
+}
+.room--light .mobile-overflow-sheet__action {
+  background: rgba(0, 0, 0, 0.04);
+}
+.room--light .mobile-overflow-sheet__action:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+.room--light .mobile-overflow-sheet__emojis {
+  background: rgba(0, 0, 0, 0.04);
+}
+.room--light .mobile-overflow-sheet__emoji-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: var(--meeting-border);
+}
+.room--light .mobile-overflow-sheet__cancel {
+  border-color: var(--meeting-border);
+  background: rgba(0, 0, 0, 0.03);
+}
+.room--light .mobile-overflow-sheet__cancel:hover {
+  background: rgba(0, 0, 0, 0.07);
+}
+.room--light .stage :deep(.captions) {
+  background: #f8f9fc;
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: none;
+}
+.room--light .stage :deep(.captions__tools) {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.08);
+  backdrop-filter: none;
+}
+.room--light .stage :deep(.captions__label) { color: #3a4a6a; }
+.room--light .stage :deep(.captions__label strong) { color: #1a2540; }
+.room--light .stage :deep(.captions__label small) { color: #5a6988; }
+.room--light .stage :deep(.dot) { background: #c0c8d8; }
+.room--light .stage :deep(.dot--active) {
+  background: #22b87a;
+  box-shadow: 0 0 0 4px rgba(34, 184, 122, 0.15);
+}
+.room--light .stage :deep(.captions__mode-toggle) {
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #5a6988;
+  background: rgba(0, 0, 0, 0.04);
+}
+.room--light .stage :deep(.captions__mode-toggle:hover) {
+  color: #1a2540;
+  border-color: rgba(0, 0, 0, 0.25);
+}
+.room--light .stage :deep(.captions__font button) {
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #3a4a6a;
+  background: rgba(0, 0, 0, 0.04);
+}
+.room--light .stage :deep(.captions__font button:hover:not(:disabled)) {
+  color: #1a2540;
+  border-color: rgba(0, 0, 0, 0.3);
+}
+.room--light .stage :deep(.captions__line) { color: #8090b0; }
+.room--light .stage :deep(.captions__line--current) { color: #0d1526; text-shadow: none; }
+.room--light .stage :deep(.captions__line--partial) { color: #2a5090; }
+.room--light .stage :deep(.captions__waiting) {
+  color: #5a6988;
+  border-color: rgba(0, 0, 0, 0.1);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+/* Dialog de confirmação no tema claro */
+.room--light.confirm-dialog-backdrop {
+  background: rgba(180, 190, 210, 0.45);
+}
+.room--light .confirm-dialog {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.14);
+}
+.room--light .confirm-dialog .ghost {
+  border-color: rgba(0, 0, 0, 0.16);
+  color: #3a4a6a;
+}
+.room--light .confirm-dialog .ghost:hover {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.25);
+}
+
+/* Admission overlay no tema claro */
+.room--light.admission-overlay {
+  background: rgba(200, 210, 230, 0.6);
+}
+.room--light .admission-overlay__card {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #1a2540;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+}
+.room--light .admission-overlay__card p { color: #5a6988; }
+.room--light .admission-overlay__card .ghost {
+  border-color: rgba(0, 0, 0, 0.16);
+  color: #3a4a6a;
+}
+
+/* Toasts no tema claro */
+.room--light .room-toast {
+  background: rgba(255, 255, 255, 0.96);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  color: #1a2540;
+}
+.room--light .room-toast--hand {
+  background: rgba(255, 251, 235, 0.97);
+  border-color: rgba(180, 120, 0, 0.25);
+  color: #6b4200;
+}
+.room--light .room-toast--chat {
+  background: rgba(240, 245, 255, 0.97);
+  border-color: rgba(80, 120, 200, 0.2);
+  color: #1a2540;
+}
+.room--light .room-toast--join {
+  background: rgba(240, 255, 248, 0.97);
+  border-color: rgba(0, 160, 100, 0.2);
+  color: #0a3a22;
+}
+.room--light .room-toast--leave { color: #5a6988; }
+.room--light .room-toast__action {
+  border-color: rgba(0, 0, 0, 0.15);
+  background: rgba(0, 0, 0, 0.05);
+  color: inherit;
+}
+.room--light .room-toast--hand .room-toast__action {
+  border-color: rgba(160, 100, 0, 0.25);
+  background: rgba(200, 130, 0, 0.08);
+}
+.room--light .room-toast__action:hover { background: rgba(0, 0, 0, 0.1); }
+.room--light .room-toast--hand .room-toast__action:hover { background: rgba(200, 130, 0, 0.16); }
+.room--light .room-toast__dismiss { color: #8090b0; }
+.room--light .room-toast__dismiss:hover { background: rgba(0, 0, 0, 0.06); color: #1a2540; }
+
+/* Hand-banner no tema claro */
+.room--light .hand-banner {
+  background: rgba(255, 251, 235, 0.97);
+  border-color: rgba(180, 120, 0, 0.3);
+  color: #6b4200;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+}
+.room--light .hand-banner__text small { color: rgba(107, 66, 0, 0.65); }
+.room--light .hand-banner__btn {
+  border-color: rgba(160, 100, 0, 0.3);
+  background: rgba(200, 130, 0, 0.1);
+  color: #6b4200;
+}
+.room--light .hand-banner__btn:hover { background: rgba(200, 130, 0, 0.2); }
 </style>
