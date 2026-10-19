@@ -157,6 +157,10 @@ function createLiveMock() {
     approveAdmission: vi.fn().mockResolvedValue({ ok: true }),
     rejectAdmission: vi.fn().mockResolvedValue({ ok: true }),
     removeParticipant: vi.fn().mockResolvedValue({ ok: true }),
+    reactions: ref<{ id: string; participantId: string; name: string; emoji: string }[]>([]),
+    sendReaction: vi.fn().mockResolvedValue({ ok: true }),
+    mutedByHostAt: ref<number | null>(null),
+    muteAll: vi.fn().mockResolvedValue({ ok: true }),
   }
 }
 
