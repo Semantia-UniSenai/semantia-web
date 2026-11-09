@@ -1,0 +1,65 @@
+name: E2E da chamada de vídeo (Playwright + LiveKit)
+
+on:
+  pull_request:
+    paths: ['e2e/**', 'src/live/**', 'playwright.config.ts', 'scripts/run-conference-e2e.mjs', '.github/workflows/e2e-chamada.yml']
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SEMANTIA_API_DIR: ${{ github.workspace }}/api
+    steps:
+      - name: Conferir o segredo de acesso ao repositório da API
+        env:
+          TOKEN: ${{ secrets.SEMANTIA_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::Falta o segredo SEMANTIA_API_TOKEN (token com permissão de leitura de código no semantia-api). Veja o passo a passo no PR."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          path: web
+      - uses: actions/checkout@v4
+        with:
+          repository: Semantia-UniSenai/semantia-api
+          ref: dev
+          token: ${{ secrets.SEMANTIA_API_TOKEN }}
+          path: api
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Instalar dependências
+        run: |
+          pnpm install --frozen-lockfile --dir web
+          pnpm install --frozen-lockfile --dir api
+      - name: Instalar navegadores (Chromium, Firefox e WebKit)
+        working-directory: web
+        run: pnpm exec playwright install --with-deps chromium firefox webkit
+      - name: Subir PostgreSQL e LiveKit e rodar os testes
+        working-directory: web
+        run: node scripts/run-conference-e2e.mjs --reporter=list,json
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ github.workspace }}/web/.e2e-results/resultado.json
+      - name: Guardar relatório e capturas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-chamada-${{ github.sha }}
+          path: |
+            web/.e2e-results/report
+            web/.e2e-results/resultado.json
+            web/.e2e-results/artifacts
+          retention-days: 90
+          if-no-files-found: warn
+      - name: Resumo na página da execução
+        if: always()
+        run: |
+          echo '### E2E da chamada (Playwright)' >> "$GITHUB_STEP_SUMMARY"
+          node -e "const r=JSON.parse(require('fs').readFileSync('web/.e2e-results/resultado.json'));console.log('\n'+JSON.stringify(r.stats,null,2))" >> "$GITHUB_STEP_SUMMARY" || echo 'sem resultado.json' >> "$GITHUB_STEP_SUMMARY"
