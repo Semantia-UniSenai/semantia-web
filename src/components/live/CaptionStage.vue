@@ -164,7 +164,7 @@ watch(
           <button
             type="button"
             :disabled="fontStep === 0"
-            aria-label="Diminuir texto"
+            aria-label="Diminuir texto (A−)"
             @click="setFont(-1)"
           >
             A−
@@ -172,7 +172,7 @@ watch(
           <button
             type="button"
             :disabled="fontStep === FONT_STEPS.length - 1"
-            aria-label="Aumentar texto"
+            aria-label="Aumentar texto (A+)"
             @click="setFont(1)"
           >
             A+

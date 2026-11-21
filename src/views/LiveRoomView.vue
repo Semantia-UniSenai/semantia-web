@@ -143,7 +143,6 @@ function toggleTheme() {
   roomTheme.value = roomTheme.value === 'dark' ? 'light' : 'dark'
   localStorage.setItem('room-theme', roomTheme.value)
 }
-let reactionsTrayTimer: ReturnType<typeof setTimeout> | null = null
 
 const REACTION_EMOJIS = ['👍', '❤️', '😂', '🎉', '🙌']
 
@@ -156,18 +155,16 @@ interface FloatingReaction {
 const floatingReactions = ref<FloatingReaction[]>([])
 
 function toggleReactionsTray() {
+  // WCAG 2.2.1: a bandeja não fecha sozinha; fecha ao escolher, ao clicar de novo ou com Esc.
   reactionsTrayOpen.value = !reactionsTrayOpen.value
-  if (reactionsTrayOpen.value) {
-    if (reactionsTrayTimer) clearTimeout(reactionsTrayTimer)
-    reactionsTrayTimer = window.setTimeout(() => {
-      reactionsTrayOpen.value = false
-    }, 6000)
-  }
+}
+
+function closeReactionsTray() {
+  reactionsTrayOpen.value = false
 }
 
 async function sendReaction(emoji: string) {
   reactionsTrayOpen.value = false
-  if (reactionsTrayTimer) clearTimeout(reactionsTrayTimer)
   await live.sendReaction(emoji)
 }
 
@@ -235,7 +232,6 @@ onBeforeUnmount(() => {
   if (admissionArrivalTimer !== null) clearTimeout(admissionArrivalTimer)
   for (const t of toastQueue.value) clearTimeout(t.timer)
   if (meetingTimerInterval !== null) clearInterval(meetingTimerInterval)
-  if (reactionsTrayTimer !== null) clearTimeout(reactionsTrayTimer)
   restoreConferenceMicrophoneAfterTest = false
   restoreConferenceCameraAfterTest = false
   void audioInput.stopTest()
@@ -1052,17 +1048,17 @@ function trapPanelFocus(event: KeyboardEvent) {
             :class="{ 'meeting-control--active': reactionsTrayOpen }"
             type="button"
             :aria-pressed="reactionsTrayOpen"
-            aria-label="Abrir painel de reações"
+            :aria-label="`Reagir Reações. ${reactionsTrayOpen ? 'Fechar' : 'Abrir'} painel de reações`"
             @click="toggleReactionsTray"
           >
             <span class="control-icon" aria-hidden="true">😊</span>
             <span class="control-copy">
-              <strong>Reagir</strong>
+              <strong>Reagir</strong>{{ ' ' }}
               <small>Reações</small>
             </span>
           </button>
           <Transition name="reaction-tray">
-            <div v-if="reactionsTrayOpen" class="reaction-tray" role="toolbar" aria-label="Escolha uma reação">
+            <div v-if="reactionsTrayOpen" class="reaction-tray" role="toolbar" aria-label="Escolha uma reação" @keydown.esc.stop="closeReactionsTray">
               <button
                 v-for="emoji in REACTION_EMOJIS"
                 :key="emoji"

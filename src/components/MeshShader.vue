@@ -19,6 +19,9 @@ const props = withDefaults(
 
 const el = ref<HTMLDivElement | null>(null)
 let mount: ShaderMount | null = null
+let stopTimer: ReturnType<typeof setTimeout> | undefined
+// WCAG 2.2.2: movimento automático que passa de 5 s precisa poder ser pausado; o fundo congela em 5 s.
+const MAX_MOVEMENT_MS = 5000
 
 onMounted(() => {
   if (!el.value) return
@@ -50,12 +53,16 @@ onMounted(() => {
       undefined,
       reduce ? 0 : props.speed,
     )
+    if (!reduce) stopTimer = setTimeout(() => mount?.setSpeed(0), MAX_MOVEMENT_MS)
   } catch {
     mount = null
   }
 })
 
-onBeforeUnmount(() => mount?.dispose())
+onBeforeUnmount(() => {
+  clearTimeout(stopTimer)
+  mount?.dispose()
+})
 </script>
 
 <template>
