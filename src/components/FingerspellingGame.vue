@@ -207,7 +207,7 @@ onBeforeUnmount(() => {
   font-family: var(--display);
   font-weight: 800;
   font-size: clamp(18px, 3vw, 30px);
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 .overlay {
   position: absolute;
@@ -258,7 +258,7 @@ onBeforeUnmount(() => {
   color: var(--ink-soft);
 }
 .pts {
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 .opts {
   display: grid;

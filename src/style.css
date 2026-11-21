@@ -10,12 +10,14 @@
   --teal: #4fb3bf;
   --blue: #5b86d4;
   --purple: #9277cf;
-  --brand: linear-gradient(115deg, var(--teal) 0%, var(--blue) 50%, var(--purple) 100%);
+  --brand: linear-gradient(115deg, #2a7f8c 0%, #3f64b0 50%, #6f55b8 100%); /* WCAG 1.4.3: texto branco >= 4,5:1 em todo o gradiente */
 
   /* Neutros */
   --ink: #1c2230;
   --ink-soft: #4d5666;
-  --muted: #8a93a4;
+  --muted: #5d6879;
+  --brand-ink: #3f64b0;
+  --field-border: #7a8497;
   --line: #e6e9f0;
   --surface: #ffffff;
   --bg: #f3f5fa;

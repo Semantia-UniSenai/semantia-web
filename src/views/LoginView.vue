@@ -28,11 +28,11 @@ async function onSubmit() {
   }
 }
 
+// As mensagens da API vêm em inglês; a interface mostra sempre texto em português (WCAG 3.1.2).
 function extractError(e: unknown, fallback: string): string {
-  const err = e as { response?: { data?: { message?: string | string[] } } }
-  const msg = err?.response?.data?.message
-  if (Array.isArray(msg)) return msg[0]
-  return msg || fallback
+  const status = (e as { response?: { status?: number } })?.response?.status
+  if (status === 401 || status === 400) return fallback
+  return 'Não foi possível entrar agora. Tente novamente em instantes.'
 }
 </script>
 
@@ -123,14 +123,14 @@ label {
 input {
   padding: 12px 14px;
   border-radius: 11px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--field-border);
   background: var(--bg);
   font: inherit;
   color: var(--ink);
 }
-input:focus {
-  outline: 2px solid var(--brand);
-  outline-offset: 1px;
+input:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
 }
 .btn {
   margin-top: 6px;
@@ -160,7 +160,7 @@ input:focus {
   color: var(--ink-soft);
 }
 .alt a {
-  color: var(--brand);
+  color: var(--brand-ink);
   font-weight: 700;
 }
 @media (max-width: 400px) {

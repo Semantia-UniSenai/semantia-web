@@ -712,7 +712,7 @@ describe('LiveRoomView accessible stage layout', () => {
     await removeBtn.trigger('click')
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.find('[role="dialog"][aria-modal="true"]').exists()).toBe(true)
+    expect(wrapper.find('[aria-labelledby="confirm-remove-title"][aria-modal="true"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Remover participante?')
     expect(wrapper.text()).toContain('Lia')
     expect(liveMock.removeParticipant).not.toHaveBeenCalled()
@@ -733,11 +733,11 @@ describe('LiveRoomView accessible stage layout', () => {
 
     await wrapper.get('button[aria-label="Remover Lia da sala"]').trigger('click')
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+    expect(wrapper.find('[aria-labelledby="confirm-remove-title"]').exists()).toBe(true)
 
-    await wrapper.get('[role="dialog"] button.ghost').trigger('click')
+    await wrapper.get('[aria-labelledby="confirm-remove-title"] button.ghost').trigger('click')
     await wrapper.vm.$nextTick()
-    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-labelledby="confirm-remove-title"]').exists()).toBe(false)
     expect(liveMock.removeParticipant).not.toHaveBeenCalled()
   })
 
@@ -757,12 +757,12 @@ describe('LiveRoomView accessible stage layout', () => {
     await wrapper.get('button[aria-label="Remover Lia da sala"]').trigger('click')
     await wrapper.vm.$nextTick()
 
-    await wrapper.get('[role="dialog"] button.danger').trigger('click')
+    await wrapper.get('[aria-labelledby="confirm-remove-title"] button.danger').trigger('click')
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
 
     expect(liveMock.removeParticipant).toHaveBeenCalledWith('part-2')
-    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-labelledby="confirm-remove-title"]').exists()).toBe(false)
   })
 
   it('exibe banner de sala de espera quando há fila e painel não está em Pessoas', async () => {

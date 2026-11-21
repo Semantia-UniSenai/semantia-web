@@ -2553,7 +2553,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   --meeting-surface-raised: #d8dde9;
   --meeting-border: rgba(0, 0, 0, 0.12);
   --meeting-text: #1a2540;
-  --meeting-muted: #5a6988;
+  --meeting-muted: #46506c;
 }
 .room--light .topbar {
   background: rgba(240, 242, 248, 0.92);
@@ -2609,7 +2609,7 @@ function trapPanelFocus(event: KeyboardEvent) {
 }
 .room--light .stage :deep(.captions__label) { color: #3a4a6a; }
 .room--light .stage :deep(.captions__label strong) { color: #1a2540; }
-.room--light .stage :deep(.captions__label small) { color: #5a6988; }
+.room--light .stage :deep(.captions__label small) { color: #46506c; }
 .room--light .stage :deep(.dot) { background: #c0c8d8; }
 .room--light .stage :deep(.dot--active) {
   background: #22b87a;
@@ -2617,7 +2617,7 @@ function trapPanelFocus(event: KeyboardEvent) {
 }
 .room--light .stage :deep(.captions__mode-toggle) {
   border-color: rgba(0, 0, 0, 0.12);
-  color: #5a6988;
+  color: #46506c;
   background: rgba(0, 0, 0, 0.04);
 }
 .room--light .stage :deep(.captions__mode-toggle:hover) {
@@ -2633,11 +2633,11 @@ function trapPanelFocus(event: KeyboardEvent) {
   color: #1a2540;
   border-color: rgba(0, 0, 0, 0.3);
 }
-.room--light .stage :deep(.captions__line) { color: #8090b0; }
+.room--light .stage :deep(.captions__line) { color: #46506c; opacity: 0.92; }
 .room--light .stage :deep(.captions__line--current) { color: #0d1526; text-shadow: none; }
 .room--light .stage :deep(.captions__line--partial) { color: #2a5090; }
 .room--light .stage :deep(.captions__waiting) {
-  color: #5a6988;
+  color: #46506c;
   border-color: rgba(0, 0, 0, 0.1);
   background: rgba(0, 0, 0, 0.03);
 }
@@ -2670,7 +2670,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   color: #1a2540;
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
 }
-.room--light .admission-overlay__card p { color: #5a6988; }
+.room--light .admission-overlay__card p { color: #46506c; }
 .room--light .admission-overlay__card .ghost {
   border-color: rgba(0, 0, 0, 0.16);
   color: #3a4a6a;
@@ -2698,7 +2698,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   border-color: rgba(0, 160, 100, 0.2);
   color: #0a3a22;
 }
-.room--light .room-toast--leave { color: #5a6988; }
+.room--light .room-toast--leave { color: #46506c; }
 .room--light .room-toast__action {
   border-color: rgba(0, 0, 0, 0.15);
   background: rgba(0, 0, 0, 0.05);
@@ -2710,7 +2710,7 @@ function trapPanelFocus(event: KeyboardEvent) {
 }
 .room--light .room-toast__action:hover { background: rgba(0, 0, 0, 0.1); }
 .room--light .room-toast--hand .room-toast__action:hover { background: rgba(200, 130, 0, 0.16); }
-.room--light .room-toast__dismiss { color: #8090b0; }
+.room--light .room-toast__dismiss { color: #46506c; }
 .room--light .room-toast__dismiss:hover { background: rgba(0, 0, 0, 0.06); color: #1a2540; }
 
 /* Hand-banner no tema claro */
@@ -2721,6 +2721,16 @@ function trapPanelFocus(event: KeyboardEvent) {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
 }
 .room--light .hand-banner__text small { color: rgba(107, 66, 0, 0.65); }
+/* O cinza global --muted ficou escuro (WCAG 1.4.3); a sala escura usa uma variante clara. */
+.room { --muted: #a3adc2; }
+.room--light { --muted: #5d6879; }
+/* WCAG 1.4.3: textos que usavam as cores do tema escuro no tema claro */
+.room--light .status { color: #0c6b45; }
+.room--light .danger,
+.room--light .mobile-overflow-sheet__action--danger { color: #a3203d; }
+.room--light :deep(.conference-control small) { color: #46506c; }
+.room--light :deep(.conference-controls__status--visible) { color: #2f3a54; background: rgba(0, 0, 0, 0.06); }
+.room--light :deep(.mic__status) { color: #46506c; }
 .room--light .hand-banner__btn {
   border-color: rgba(160, 100, 0, 0.3);
   background: rgba(200, 130, 0, 0.1);

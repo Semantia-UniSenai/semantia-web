@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import type { AudienceContext } from '../../api/sessions-context'
 
 withDefaults(
@@ -14,6 +14,46 @@ const emit = defineEmits<{
   submit: [payload: { context: AudienceContext; requiresApproval: boolean }]
   skip: []
 }>()
+
+const dialogRef = ref<HTMLElement | null>(null)
+let previouslyFocused: HTMLElement | null = null
+
+const FOCUSABLE =
+  'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'
+
+function focusables(): HTMLElement[] {
+  return Array.from(dialogRef.value?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []).filter(
+    (el) => el.offsetParent !== null,
+  )
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    emit('skip')
+    return
+  }
+  if (event.key !== 'Tab') return
+  const items = focusables()
+  if (items.length === 0) return
+  const first = items[0]!
+  const last = items[items.length - 1]!
+  const active = document.activeElement
+  if (event.shiftKey && (active === first || !dialogRef.value?.contains(active))) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && (active === last || !dialogRef.value?.contains(active))) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+onMounted(async () => {
+  previouslyFocused = document.activeElement as HTMLElement | null
+  await nextTick()
+  dialogRef.value?.querySelector<HTMLElement>('#ctx-meeting-type')?.focus()
+})
+onBeforeUnmount(() => previouslyFocused?.focus?.())
 
 const fieldError = ref<string | null>(null)
 const requiresApproval = ref(false)
@@ -40,7 +80,14 @@ function submit() {
 </script>
 
 <template>
-  <div class="context-form" role="region" aria-label="Configuração da plateia">
+  <div
+    ref="dialogRef"
+    class="context-form"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Configuração da plateia"
+    @keydown="onKeydown"
+  >
     <div class="context-form__inner">
       <h2 class="context-form__title" style="color: #f4f7ff">Configure a plateia</h2>
       <p class="context-form__desc">
@@ -111,7 +158,7 @@ function submit() {
         <div class="field field--toggle">
           <div class="toggle-row">
             <div class="toggle-info">
-              <span class="toggle-label">Controlar quem entra na sala</span>
+              <span id="ctx-approval-label" class="toggle-label">Controlar quem entra na sala</span>
               <span v-if="requiresApproval" class="toggle-sublabel">
                 Participantes precisarão de aprovação antes de entrar
               </span>
@@ -119,6 +166,7 @@ function submit() {
             <button
               type="button"
               role="switch"
+              aria-labelledby="ctx-approval-label"
               :aria-checked="requiresApproval"
               class="toggle-btn"
               :class="{ 'toggle-btn--on': requiresApproval }"
@@ -217,13 +265,14 @@ function submit() {
   background: #1e2840;
   color: #dce4fa;
   font-size: 0.9375rem;
-  outline: none;
   transition: border-color 0.15s;
 }
 
-.field select:focus,
-.field input:focus {
-  border-color: #6b8af7;
+.field select:focus-visible,
+.field input:focus-visible {
+  border-color: #8fa6ff;
+  outline: 3px solid #8fa6ff;
+  outline-offset: 2px;
 }
 
 .field input[aria-invalid='true'] {
@@ -333,7 +382,7 @@ function submit() {
   padding: 10px 20px;
   border: none;
   border-radius: 10px;
-  background: #4f6ef7;
+  background: #3d5ce5;
   color: white;
   font-weight: 700;
   cursor: pointer;
@@ -341,7 +390,7 @@ function submit() {
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #3d5ce5;
+  background: #2f4bcc;
 }
 
 .btn-primary:disabled {
