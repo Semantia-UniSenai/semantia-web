@@ -36,7 +36,7 @@ function openInvite() {
 
 <template>
   <div class="page">
-    <RoomsHeader />
+    <RoomsHeader current="inicio" />
     <main class="wrap">
       <section class="hero">
         <div class="hero__copy">
@@ -128,7 +128,7 @@ function openInvite() {
 }
 .eyebrow {
   margin: 0 0 10px;
-  color: var(--brand);
+  color: var(--brand-ink);
   font-size: 12px;
   font-weight: 800;
   text-transform: uppercase;
@@ -219,7 +219,7 @@ function openInvite() {
   background: var(--surface);
 }
 .features span {
-  color: var(--brand);
+  color: var(--brand-ink);
   font: 800 12px var(--display);
 }
 .features h2 {
@@ -270,9 +270,8 @@ function openInvite() {
   min-width: 0;
   height: 52px;
   padding: 0 16px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--field-border);
   border-radius: 13px;
-  outline: none;
   background: var(--bg);
   color: var(--ink);
   font: 500 15px var(--display);
@@ -280,9 +279,10 @@ function openInvite() {
 .invite__form input::placeholder {
   color: var(--muted);
 }
-.invite__form input:focus {
-  border-color: var(--brand);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent);
+.invite__form input:focus-visible {
+  border-color: var(--blue);
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
 }
 .invite__form button {
   display: inline-flex;

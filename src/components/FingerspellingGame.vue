@@ -126,8 +126,13 @@ onBeforeUnmount(() => {
         muted
         playsinline
         preload="auto"
+        aria-describedby="game-video-desc"
         @timeupdate="onTimeUpdate"
       ></video>
+      <p id="game-video-desc" class="sr-only">
+        Vídeo sem áudio de uma pessoa mostrando com a mão direita a configuração de mão de uma letra
+        do alfabeto manual da Libras. A letra fica oculta de propósito, porque o jogo pede que você a descubra.
+      </p>
       <!-- máscara do canto que mostra a letra no vídeo -->
       <div class="mask" aria-hidden="true">?</div>
 
@@ -207,7 +212,7 @@ onBeforeUnmount(() => {
   font-family: var(--display);
   font-weight: 800;
   font-size: clamp(18px, 3vw, 30px);
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 .overlay {
   position: absolute;
@@ -258,7 +263,7 @@ onBeforeUnmount(() => {
   color: var(--ink-soft);
 }
 .pts {
-  color: var(--brand);
+  color: var(--brand-ink);
 }
 .opts {
   display: grid;

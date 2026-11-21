@@ -13,8 +13,8 @@ describe('ConferenceControls', () => {
       },
     })
 
-    const microphone = wrapper.get('button[aria-label="Ativar microfone da chamada"]')
-    const camera = wrapper.get('button[aria-label="Ativar câmera da chamada"]')
+    const microphone = wrapper.get('button[aria-label="Áudio Microfone desligado. Ativar microfone da chamada"]')
+    const camera = wrapper.get('button[aria-label="Vídeo Câmera desligada. Ativar câmera da chamada"]')
     expect(microphone.attributes()).not.toHaveProperty('disabled')
     expect(camera.attributes()).not.toHaveProperty('disabled')
 
@@ -32,8 +32,8 @@ describe('ConferenceControls', () => {
       },
     })
 
-    const microphone = wrapper.get('button[aria-label="Ativar microfone da chamada"]')
-    const camera = wrapper.get('button[aria-label="Desativar câmera da chamada"]')
+    const microphone = wrapper.get('button[aria-label="Áudio Microfone desligado. Ativar microfone da chamada"]')
+    const camera = wrapper.get('button[aria-label="Vídeo Câmera ativa. Desativar câmera da chamada"]')
     expect(microphone.attributes('aria-pressed')).toBe('false')
     expect(camera.attributes('aria-pressed')).toBe('true')
 
@@ -56,7 +56,7 @@ describe('ConferenceControls', () => {
       },
     })
 
-    const microphone = wrapper.get('button[aria-label="Ativando áudio da chamada"]')
+    const microphone = wrapper.get('button[aria-label="Áudio Ativando…. Ativando áudio da chamada"]')
     expect(microphone.attributes('aria-busy')).toBe('true')
     expect(microphone.attributes()).toHaveProperty('disabled')
     expect(microphone.text()).toContain('Ativando…')
@@ -203,5 +203,25 @@ describe('ConferenceControls', () => {
     await wrapper.get('button[data-testid="retry-media"]').trigger('click')
 
     expect(wrapper.emitted('retry')).toHaveLength(1)
+  })
+})
+
+describe('ConferenceControls nome acessível (WCAG 2.5.3)', () => {
+  it('o nome acessível dos botões de áudio e vídeo contém o texto visível', () => {
+    const wrapper = mount(ConferenceControls, {
+      props: {
+        mediaStatus: 'failed',
+        mediaError: null,
+        microphoneEnabled: false,
+        cameraEnabled: false,
+      },
+    })
+    const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+    for (const selector of ['button[aria-label^="Áudio"]', 'button[aria-label^="Vídeo"]']) {
+      const button = wrapper.get(selector)
+      expect(normalize(button.attributes('aria-label')!)).toContain(
+        normalize(button.findAll('strong, small').map((part) => part.text()).join(' ')),
+      )
+    }
   })
 })

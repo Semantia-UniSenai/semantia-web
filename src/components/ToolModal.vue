@@ -90,7 +90,7 @@ onBeforeUnmount(() => {
         <button class="modal__x" type="button" aria-label="Fechar" @click="emit('close')">✕</button>
       </header>
 
-      <div class="modal__body">
+      <div class="modal__body" tabindex="0" role="region" :aria-label="tool.title">
         <!-- DICIONÁRIO -->
         <div v-if="tool.open === 'dicionario'">
           <p class="lead">Digite uma palavra e veja o sinal em vídeo.</p>
@@ -154,11 +154,16 @@ onBeforeUnmount(() => {
         <div v-else-if="tool.open === 'datilologia'" class="dati">
           <p class="lead">
             Datilologia é soletrar com o alfabeto manual — útil para nomes e palavras sem
-            sinal próprio. Aprenda no vídeo e treine soletrando abaixo.
+            sinal próprio. Aprenda no vídeo e treine soletrando uma palavra no campo “Palavra para soletrar”.
           </p>
           <div class="video">
-            <video ref="dVideo" :src="datilologiaVideo" controls playsinline preload="metadata"></video>
+            <video ref="dVideo" :src="datilologiaVideo" controls playsinline preload="metadata" aria-describedby="dati-video-desc"></video>
           </div>
+          <p id="dati-video-desc" class="hint">
+            Descrição do vídeo (sem áudio): uma pessoa, de frente, mostra com a mão direita a
+            configuração de mão de cada letra do alfabeto manual da Libras, em ordem, de A a Z.
+            A letra aparece escrita no canto superior direito do vídeo enquanto é mostrada.
+          </p>
           <form class="search" @submit.prevent="soletrar">
             <input v-model="dWord" type="text" maxlength="40"
                    placeholder="Digite uma palavra ou nome…" aria-label="Palavra para soletrar" />
@@ -347,7 +352,7 @@ onBeforeUnmount(() => {
 }
 .chip:hover {
   border-color: var(--blue);
-  color: var(--blue);
+  color: var(--brand-ink);
   background: #fff;
 }
 .sinal {
@@ -358,7 +363,7 @@ onBeforeUnmount(() => {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--blue);
+  color: var(--brand-ink);
 }
 .sinal__word {
   font-size: 32px;
@@ -417,7 +422,7 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 .faq__q span {
-  color: var(--blue);
+  color: var(--brand-ink);
   font-size: 20px;
   line-height: 1;
 }

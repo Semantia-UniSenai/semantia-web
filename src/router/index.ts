@@ -12,17 +12,17 @@ import SessionInviteView from '../views/SessionInviteView.vue'
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    { path: '/', component: LandingView },
-    { path: '/entrar', component: LoginView, meta: { guestOnly: true } },
-    { path: '/criar-conta', component: SignupView, meta: { guestOnly: true } },
-    { path: '/convite/reuniao/:token', component: SessionInviteView },
+    { path: '/', component: LandingView, meta: { title: 'Semantia — Inclusão é o padrão' } },
+    { path: '/entrar', component: LoginView, meta: { guestOnly: true, title: 'Entrar' } },
+    { path: '/criar-conta', component: SignupView, meta: { guestOnly: true, title: 'Criar conta' } },
+    { path: '/convite/reuniao/:token', component: SessionInviteView, meta: { title: 'Convite para reunião' } },
     {
       path: '/sala/:sessionId',
       component: () => import('../views/LiveRoomView.vue'),
-      meta: { liveAccess: true },
+      meta: { liveAccess: true, title: 'Sala ao vivo' },
     },
-    { path: '/app', component: AppHomeView, meta: { requiresAuth: true } },
-    { path: '/app/salas', component: RoomsView, meta: { requiresAuth: true } },
+    { path: '/app', component: AppHomeView, meta: { requiresAuth: true, title: 'Início' } },
+    { path: '/app/salas', component: RoomsView, meta: { requiresAuth: true, title: 'Minhas reuniões' } },
 
 
     { path: '/:pathMatch(.*)*', redirect: '/' },
@@ -41,6 +41,12 @@ router.beforeEach((to) => {
     if (!readGuestAccess(sessionId)) return '/'
   }
   return true
+})
+
+// WCAG 2.4.2: cada rota tem um título próprio.
+router.afterEach((to) => {
+  const title = (to.meta.title as string | undefined) ?? 'Semantia'
+  document.title = title.startsWith('Semantia') ? title : `${title} — Semantia`
 })
 
 export default router

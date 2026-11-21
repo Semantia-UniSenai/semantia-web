@@ -221,6 +221,10 @@ function onActivate(tool: Tool) {
   <footer class="ftr">
     <div class="container ftr__in">
       <img src="/brand/semantia-logo.png" alt="Semantia" class="ftr__logo" />
+      <nav class="ftr__nav" aria-label="Conta">
+        <RouterLink to="/entrar">Entrar</RouterLink>
+        <RouterLink to="/criar-conta">Criar conta</RouterLink>
+      </nav>
       <p class="ftr__meta">
         TCC · Análise e Desenvolvimento de Sistemas · UNISENAI Joinville<br />
         <span>Tradução em Libras por VLibras (gov.br) · Sinais por Signbank UFSC</span>
@@ -311,7 +315,7 @@ function onActivate(tool: Tool) {
   gap: 9px;
   font-size: 13px;
   font-weight: 700;
-  color: var(--blue);
+  color: var(--brand-ink);
   background: rgba(255, 255, 255, 0.66);
   backdrop-filter: blur(6px);
   padding: 8px 16px;
@@ -633,6 +637,14 @@ function onActivate(tool: Tool) {
 .ftr {
   background: var(--surface);
   border-top: 1px solid var(--line);
+}
+.ftr__nav {
+  display: flex;
+  gap: 18px;
+}
+.ftr__nav a {
+  color: var(--ink-soft);
+  font-weight: 700;
 }
 .ftr__in {
   display: flex;

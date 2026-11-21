@@ -59,6 +59,14 @@ const props = withDefaults(
   },
 )
 
+// WCAG 2.5.3: o nome acessível começa pelo texto visível do botão.
+const microphoneStateText = computed(() =>
+  props.microphonePending ? 'Ativando…' : props.microphoneEnabled ? 'Microfone ativo' : 'Microfone desligado',
+)
+const cameraStateText = computed(() =>
+  props.cameraPending ? 'Ativando…' : props.cameraEnabled ? 'Câmera ativa' : 'Câmera desligada',
+)
+
 const emit = defineEmits<{
   'toggle-microphone': []
   'toggle-camera': []
@@ -182,7 +190,7 @@ const statusLabel = computed(() => {
       class="conference-control"
       :class="{ active: microphoneEnabled }"
       :disabled="controlsDisabled || microphonePending"
-      :aria-label="microphonePending ? 'Ativando áudio da chamada' : microphoneEnabled ? 'Desativar microfone da chamada' : 'Ativar microfone da chamada'"
+      :aria-label="`Áudio ${microphoneStateText}. ${microphonePending ? 'Ativando áudio da chamada' : microphoneEnabled ? 'Desativar microfone da chamada' : 'Ativar microfone da chamada'}`"
       :aria-pressed="microphoneEnabled"
       :aria-busy="microphonePending || undefined"
       @click="emit('toggle-microphone')"
@@ -195,8 +203,8 @@ const statusLabel = computed(() => {
         </svg>
       </span>
       <span>
-        <strong>Áudio</strong>
-        <small>{{ microphonePending ? 'Ativando…' : microphoneEnabled ? 'Microfone ativo' : 'Microfone desligado' }}</small>
+        <strong>Áudio</strong>{{ ' ' }}
+        <small>{{ microphoneStateText }}</small>
       </span>
     </button>
 
@@ -205,7 +213,7 @@ const statusLabel = computed(() => {
       class="conference-control"
       :class="{ active: cameraEnabled }"
       :disabled="controlsDisabled || cameraPending"
-      :aria-label="cameraPending ? 'Ativando vídeo da chamada' : cameraEnabled ? 'Desativar câmera da chamada' : 'Ativar câmera da chamada'"
+      :aria-label="`Vídeo ${cameraStateText}. ${cameraPending ? 'Ativando vídeo da chamada' : cameraEnabled ? 'Desativar câmera da chamada' : 'Ativar câmera da chamada'}`"
       :aria-pressed="cameraEnabled"
       :aria-busy="cameraPending || undefined"
       @click="emit('toggle-camera')"
@@ -218,8 +226,8 @@ const statusLabel = computed(() => {
         </svg>
       </span>
       <span>
-        <strong>Vídeo</strong>
-        <small>{{ cameraPending ? 'Ativando…' : cameraEnabled ? 'Câmera ativa' : 'Câmera desligada' }}</small>
+        <strong>Vídeo</strong>{{ ' ' }}
+        <small>{{ cameraStateText }}</small>
       </span>
     </button>
 
