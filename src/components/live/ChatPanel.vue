@@ -109,6 +109,10 @@ function hour(at: string): string {
   padding: 0 16px;
 }
 .chat__msg {
+  /* WCAG 1.4.3: cores próprias do balão, para não depender do fundo escuro ou claro da sala. */
+  --m-ink: #1c2230;
+  --m-soft: #4d5666;
+  --m-muted: #5d6879;
   max-width: 88%;
   align-self: flex-start;
   background: var(--bg-2);
@@ -116,6 +120,9 @@ function hour(at: string): string {
   padding: 9px 12px;
 }
 .chat__msg.mine {
+  --m-ink: var(--chat-mine-ink, #eef2ff);
+  --m-soft: var(--chat-mine-soft, #c3cce2);
+  --m-muted: var(--chat-mine-soft, #c3cce2);
   align-self: flex-end;
   background: rgba(91, 134, 212, 0.14);
   border-radius: 14px 14px 4px 14px;
@@ -125,10 +132,10 @@ function hour(at: string): string {
   align-items: baseline;
   gap: 7px;
   font-size: 12px;
-  color: var(--ink-soft);
+  color: var(--m-soft);
 }
 .chat__meta strong {
-  color: var(--ink);
+  color: var(--m-ink);
   font-size: 12.5px;
 }
 .chat__badge {
@@ -141,13 +148,13 @@ function hour(at: string): string {
 }
 .chat__meta time {
   margin-left: auto;
-  color: var(--muted);
+  color: var(--m-muted);
   font-size: 11px;
 }
 .chat__text {
   margin: 3px 0 0;
   font-size: 14.5px;
-  color: var(--ink);
+  color: var(--m-ink);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }

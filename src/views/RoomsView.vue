@@ -68,7 +68,7 @@ onMounted(load)
 
 <template>
   <div class="page">
-    <RoomsHeader back-to="/app" back-label="Início" />
+    <RoomsHeader current="reunioes" />
     <main class="wrap">
       <header class="hero">
         <div>
@@ -102,7 +102,7 @@ onMounted(load)
             <span>Link de convite</span>
             <input v-model="invite" required autocomplete="off" placeholder="https://…/convite/reuniao/…" />
           </label>
-          <button type="submit">Continuar</button>
+          <button type="submit">Entrar na reunião</button>
         </form>
       </section>
 

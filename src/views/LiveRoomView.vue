@@ -2235,6 +2235,7 @@ function trapPanelFocus(event: KeyboardEvent) {
 }
 .admission-overlay__card h2 {
   margin: 0;
+  color: #f4f7ff;
   font-size: 1.2rem;
   font-weight: 800;
 }
@@ -2667,6 +2668,7 @@ function trapPanelFocus(event: KeyboardEvent) {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
 }
 .room--light .admission-overlay__card p { color: #46506c; }
+.room--light .admission-overlay__card h2 { color: #1a2540; }
 .room--light .admission-overlay__card .ghost {
   border-color: rgba(0, 0, 0, 0.16);
   color: #3a4a6a;
@@ -2719,7 +2721,9 @@ function trapPanelFocus(event: KeyboardEvent) {
 .room--light .hand-banner__text small { color: rgba(107, 66, 0, 0.65); }
 /* O cinza global --muted ficou escuro (WCAG 1.4.3); a sala escura usa uma variante clara. */
 .room { --muted: #a3adc2; }
-.room--light { --muted: #5d6879; }
+.room--light { --muted: #5d6879; --chat-mine-ink: #1c2230; --chat-mine-soft: #4d5666; }
+.room .people button { color: #ffd98a; }
+.room--light .people button { color: #7a4f06; }
 /* WCAG 1.4.3: textos que usavam as cores do tema escuro no tema claro */
 .room--light .status { color: #0c6b45; }
 .room--light .danger,

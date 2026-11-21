@@ -107,3 +107,15 @@ describe('RoomsView instant meeting journey', () => {
     expect(wrapper.text()).not.toContain('Invalid Date')
   })
 })
+
+describe('RoomsView rótulos consistentes (WCAG 3.2.4)', () => {
+  it('usa o mesmo rótulo da tela inicial para entrar por convite', async () => {
+    mocks.listRooms.mockResolvedValue([])
+    const wrapper = mount(RoomsView)
+    await flushPromises()
+
+    const labels = wrapper.findAll('button').map((button) => button.text())
+    expect(labels).toContain('Entrar na reunião')
+    expect(labels).not.toContain('Continuar')
+  })
+})

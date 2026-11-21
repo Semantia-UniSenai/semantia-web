@@ -36,7 +36,7 @@ function openInvite() {
 
 <template>
   <div class="page">
-    <RoomsHeader />
+    <RoomsHeader current="inicio" />
     <main class="wrap">
       <section class="hero">
         <div class="hero__copy">

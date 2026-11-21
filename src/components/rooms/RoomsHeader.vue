@@ -2,7 +2,7 @@
 import { RouterLink, useRouter } from 'vue-router'
 import { useAuth } from '../../stores/auth'
 
-defineProps<{ backTo?: string; backLabel?: string }>()
+defineProps<{ current?: 'inicio' | 'reunioes' }>()
 
 const router = useRouter()
 const { user, logout } = useAuth()
@@ -20,12 +20,10 @@ function onLogout() {
         <img src="/brand/semantia-mark.png" alt="" width="30" height="32" />
         <span class="brand__name">Semantia</span>
       </RouterLink>
-      <RouterLink v-if="backTo" class="back" :to="backTo">
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path d="M10.5 3 5.5 8l5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-        <span>{{ backLabel ?? 'Voltar' }}</span>
-      </RouterLink>
+      <nav class="links" aria-label="Aplicativo">
+        <RouterLink to="/app" :aria-current="current === 'inicio' ? 'page' : undefined">Início</RouterLink>
+        <RouterLink to="/app/salas" :aria-current="current === 'reunioes' ? 'page' : undefined">Minhas reuniões</RouterLink>
+      </nav>
     </div>
     <div class="who">
       <span class="hi">Olá, <strong>{{ user?.name }}</strong></span>
@@ -65,21 +63,29 @@ function onLogout() {
   font-size: 19px;
   color: var(--ink);
 }
-.back {
+.links {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.links a {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
   padding: 7px 12px;
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: 10px;
-  background: var(--surface);
   text-decoration: none;
   font-weight: 600;
   font-size: 13.5px;
   color: var(--ink-soft);
   white-space: nowrap;
 }
-.back:hover {
+.links a:hover {
+  color: var(--ink);
+}
+.links a[aria-current='page'] {
+  border-color: var(--line);
+  background: var(--surface);
   color: var(--ink);
 }
 .who {

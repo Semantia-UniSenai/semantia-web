@@ -110,7 +110,7 @@ const emit = defineEmits<{ activate: [tool: Tool] }>()
   height: 58px;
   border-radius: 17px;
   background: var(--bg-2);
-  color: var(--blue);
+  color: var(--brand-ink);
   transition: background 0.22s ease, color 0.22s ease;
 }
 .tile:hover .tile__icon {
@@ -149,7 +149,7 @@ const emit = defineEmits<{ activate: [tool: Tool] }>()
   font-family: var(--display);
   font-weight: 700;
   font-size: 14px;
-  color: var(--blue);
+  color: var(--brand-ink);
 }
 .tile:hover .tile__go svg {
   transform: translateX(3px);

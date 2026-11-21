@@ -7,12 +7,15 @@ import {
 } from '../api/generated/sessions/sessions'
 import type { ResolvedSessionDto } from '../api/generated/model'
 import { saveGuestAccess } from '../live/guestAccess'
+import { useAuth } from '../stores/auth'
 
 const route = useRoute()
 const router = useRouter()
 const token = computed(() => String(route.params.token))
 const session = ref<ResolvedSessionDto | null>(null)
-const displayName = ref('')
+const { user } = useAuth()
+// WCAG 3.3.7: quem já tem conta não precisa digitar o nome de novo.
+const displayName = ref(user.value?.name ?? '')
 const loading = ref(true)
 const entering = ref(false)
 const error = ref('')

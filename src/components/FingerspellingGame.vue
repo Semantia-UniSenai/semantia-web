@@ -126,8 +126,13 @@ onBeforeUnmount(() => {
         muted
         playsinline
         preload="auto"
+        aria-describedby="game-video-desc"
         @timeupdate="onTimeUpdate"
       ></video>
+      <p id="game-video-desc" class="sr-only">
+        Vídeo sem áudio de uma pessoa mostrando com a mão direita a configuração de mão de uma letra
+        do alfabeto manual da Libras. A letra fica oculta de propósito, porque o jogo pede que você a descubra.
+      </p>
       <!-- máscara do canto que mostra a letra no vídeo -->
       <div class="mask" aria-hidden="true">?</div>
 
