@@ -71,7 +71,7 @@ const emit = defineEmits<{
   font-weight: 850;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: #758096;
+  color: #5d6879;
   flex: 1;
 }
 
@@ -138,7 +138,7 @@ const emit = defineEmits<{
 
 .admission-queue__info small {
   font-size: 11px;
-  color: #758096;
+  color: #5d6879;
 }
 
 .admission-queue__actions {

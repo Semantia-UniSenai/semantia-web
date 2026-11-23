@@ -50,6 +50,7 @@ const externalOrigins = new Set<string>()
 let browserVersion = ''
 let axeVersion = ''
 let selectedRuleIds: string[] = []
+const evaluatedRuleIds = new Set<string>()
 let fixtureRequests = 0
 
 function redact(value: string): string {
@@ -71,6 +72,7 @@ async function saveReport(): Promise<void> {
   const counts = {
     expectedStates: expectedStates.length,
     scannedStates: states.length,
+    evaluatedRuleCount: evaluatedRuleIds.size,
     statesWithViolations: states.filter((state) => state.violations.length > 0).length,
     violationRuleOccurrences: states.reduce((sum, state) => sum + state.violations.length, 0),
     violationNodes: states.reduce((sum, state) => sum + state.counts.violationNodes!, 0),
@@ -82,7 +84,9 @@ async function saveReport(): Promise<void> {
     apiCommit: process.env.E2E_API_COMMIT ?? 'not-provided',
     node: process.version,
     browser: { engine: 'Chromium', version: browserVersion, viewport: { width: 1440, height: 900 } },
-    axeVersion, tags, selectedRuleIds,
+    axeVersion, tags,
+    taggedCatalogRuleIds: selectedRuleIds,
+    evaluatedRuleIds: [...evaluatedRuleIds].sort(),
     complete: expectedStates.every((id) => states.some((state) => state.id === id)),
     missingStates: expectedStates.filter((id) => !states.some((state) => state.id === id)),
     counts,
@@ -111,6 +115,7 @@ async function saveReport(): Promise<void> {
     `Web commit \`${report.webCommit}\`; API \`${report.apiCommit}\`.`,
     `Chromium ${browserVersion}; axe-core ${axeVersion}; viewport 1440 × 900; reduced motion enabled.`,
     `Scanned ${counts.scannedStates}/${counts.expectedStates} intended states.`,
+    `Distinct rules returned by axe: ${counts.evaluatedRuleCount}. The tagged catalog contains ${selectedRuleIds.length} rules; catalog membership alone does not mean a rule ran.`,
     `States with violations: ${counts.statesWithViolations}; rule occurrences: ${counts.violationRuleOccurrences}; nodes: ${counts.violationNodes}.`,
     `States requiring manual review: ${counts.statesRequiringReview}.`,
     '',
@@ -151,6 +156,7 @@ async function scan(page: Page, id: string, role = 'visitor', theme = 'default')
   axeVersion = result.version
   selectedRuleIds = result.ruleIds.sort()
   const { violations, incomplete, passes, inapplicable } = result.results as AxeResults
+  for (const rule of [...violations, ...incomplete, ...passes, ...inapplicable]) evaluatedRuleIds.add(rule.id)
   states.push({
     id, role, theme,
     counts: {
@@ -163,6 +169,13 @@ async function scan(page: Page, id: string, role = 'visitor', theme = 'default')
     inapplicableRuleIds: inapplicable.map((rule) => rule.id).sort(),
   })
   await saveReport()
+  if (process.env.SEMANTIA_E2E_PRIVATE_SCREENSHOTS === '1' && [
+    'host-room-light', 'host-admission-queue', 'host-removal-dialog',
+  ].includes(id)) {
+    const privateDir = path.resolve('.e2e-results/accessibility/private-runtime/screenshots')
+    await mkdir(privateDir, { recursive: true })
+    await page.screenshot({ path: path.join(privateDir, `${id}.png`), animations: 'disabled' })
+  }
   console.log(`AXE ${id}: ${violations.length} violations, ${incomplete.length} incomplete, ${passes.length} passes, ${inapplicable.length} inapplicable`)
 }
 

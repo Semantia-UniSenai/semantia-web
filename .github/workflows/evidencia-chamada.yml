@@ -81,18 +81,18 @@ jobs:
             apiCommit: revision('api'),
             node: process.version,
             pnpm: execFileSync('pnpm', ['--version'], { encoding: 'utf8' }).trim(),
-            scope: 'Chromium desktop; PostgreSQL 16, API NestJS, Socket.IO e LiveKit 1.9.10 reais em loopback',
+            scope: 'Chromium desktop e recuperação de autoplay; PostgreSQL 16, API NestJS, Socket.IO e LiveKit 1.9.10 reais em loopback',
             authentication: 'Conta temporária criada pela API real e convidado admitido por convite; sessão do anfitrião instalada no navegador com o token emitido no cadastro',
             media: 'Câmera e microfone sintéticos do navegador; transporte de mídia real pelo LiveKit',
             ai: 'Adaptação desabilitada; reconhecimento de fala fora deste ensaio',
-            command: 'node scripts/run-conference-e2e.mjs --project=chromium-desktop --reporter=list,json',
+            command: 'node scripts/run-conference-e2e.mjs --project=chromium-desktop --project=chromium-autoplay-blocked --reporter=list,json',
           };
           writeFileSync('web/.e2e-results/ambiente.json', `${JSON.stringify(evidence, null, 2)}\n`);
           console.log(JSON.stringify(evidence, null, 2));
           NODE
       - name: Executar o fluxo da chamada com serviços descartáveis
         working-directory: web
-        run: node scripts/run-conference-e2e.mjs --project=chromium-desktop --reporter=list,json
+        run: node scripts/run-conference-e2e.mjs --project=chromium-desktop --project=chromium-autoplay-blocked --reporter=list,json
       - name: Publicar resumo da execução
         if: always()
         shell: bash
@@ -101,7 +101,7 @@ jobs:
           import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
           const resultFile = 'web/.e2e-results/resultado.json';
           const lines = [
-            '### Chamada com Chromium desktop',
+            '### Chamada com Chromium desktop e recuperação de autoplay',
             '',
             `API fixada em \`${process.env.API_COMMIT}\`.`,
             'PostgreSQL, API, Socket.IO e LiveKit locais. Conta e convite temporários criados pela API real.',

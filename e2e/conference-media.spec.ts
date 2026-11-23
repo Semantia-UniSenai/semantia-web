@@ -264,7 +264,9 @@ test('keeps context open without media capture when save fails and succeeds on r
   await page.goto(`/sala/${fixture.meetingId}`)
   const contextForm = page.getByRole('dialog', { name: 'Configuração da plateia' })
   await expect(contextForm).toBeVisible()
-  await contextForm.getByLabel('Assunto ou domínio', { exact: true }).fill('Planejamento do projeto')
+  await contextForm
+    .getByRole('textbox', { name: 'Assunto ou domínio', exact: true })
+    .fill('Planejamento do projeto')
   await contextForm.getByRole('button', { name: 'Salvar e continuar' }).click()
 
   await expect(contextForm).toBeVisible()
