@@ -17,8 +17,27 @@ const apiDir = candidateApiDirs.find((candidate) =>
 )
 if (!apiDir) throw new Error('Set SEMANTIA_API_DIR to the Semantia API media worktree')
 const manualMode = process.argv.includes('--manual')
+const suiteIndex = process.argv.indexOf('--suite')
+const suite = suiteIndex === -1 ? 'e2e/conference-media.spec.ts' : process.argv[suiteIndex + 1]
+if (!suite || suite.startsWith('--') || !existsSync(path.resolve(webDir, suite))) {
+  throw new Error('--suite must name an existing test file in this checkout')
+}
+if (path.relative(webDir, path.resolve(webDir, suite)).startsWith('..')) {
+  throw new Error('--suite must stay inside this checkout')
+}
+const playwrightArgs = process.argv.slice(2).filter((argument, index) =>
+  argument !== '--' && argument !== '--manual' &&
+  index + 2 !== suiteIndex && index + 2 !== suiteIndex + 1,
+)
+const portOffset = Number(process.env.SEMANTIA_E2E_PORT_OFFSET ?? 0)
+if (!Number.isInteger(portOffset) || portOffset < 0 || portOffset > 9000) {
+  throw new Error('SEMANTIA_E2E_PORT_OFFSET must be an integer from 0 to 9000')
+}
 
-const ports = { postgres: 55480, api: 30080, web: 41780, livekit: 7880, rtcTcp: 7881 }
+const ports = Object.fromEntries(
+  Object.entries({ postgres: 55480, api: 30080, web: 41780, livekit: 7880, rtcTcp: 7881, rtcUdp: 7882 })
+    .map(([name, port]) => [name, port + portOffset]),
+)
 const runtimeDir = path.join(webDir, '.e2e-runtime')
 const suffix = `${process.pid}-${Date.now()}`
 const postgresContainer = `semantia-media-e2e-postgres-${suffix}`
@@ -206,12 +225,12 @@ async function main() {
     [
       'run', '-d', '--name', livekitContainer,
       '-e', `LIVEKIT_KEYS=${livekitKey}: ${livekitSecret}`,
-      '-e', 'LIVEKIT_CONFIG=room:\n  auto_create: false',
-      '-p', `127.0.0.1:${ports.livekit}:7880`,
-      '-p', `${livekitRtcBindAddress}:${ports.rtcTcp}:7881`,
-      '-p', `${livekitRtcBindAddress}:7882:7882/udp`,
+      '-e', `LIVEKIT_CONFIG=port: ${ports.livekit}\nrtc:\n  tcp_port: ${ports.rtcTcp}\nroom:\n  auto_create: false`,
+      '-p', `127.0.0.1:${ports.livekit}:${ports.livekit}`,
+      '-p', `${livekitRtcBindAddress}:${ports.rtcTcp}:${ports.rtcTcp}`,
+      '-p', `${livekitRtcBindAddress}:${ports.rtcUdp}:${ports.rtcUdp}/udp`,
       'livekit/livekit-server:v1.9.10',
-      '--bind', '0.0.0.0', '--node-ip', livekitNodeIp, '--udp-port', '7882',
+      '--bind', '0.0.0.0', '--node-ip', livekitNodeIp, '--udp-port', String(ports.rtcUdp),
     ],
     { env: dockerEnv, label: 'LiveKit startup' },
   )
@@ -272,8 +291,8 @@ async function main() {
         'exec',
         'playwright',
         'test',
-        'e2e/conference-media.spec.ts',
-        ...process.argv.slice(2).filter((argument) => argument !== '--'),
+        suite,
+        ...playwrightArgs,
       ],
       {
         cwd: webDir,

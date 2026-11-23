@@ -1,0 +1,96 @@
+name: Evidência automática de acessibilidade (axe)
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'src/**'
+      - 'e2e/accessibility.spec.ts'
+      - 'scripts/run-conference-e2e.mjs'
+      - 'playwright.accessibility.config.ts'
+      - 'tsconfig.e2e.json'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/evidencia-acessibilidade.yml'
+  push:
+    branches: [dev, main]
+    paths:
+      - 'src/**'
+      - 'e2e/accessibility.spec.ts'
+      - 'scripts/run-conference-e2e.mjs'
+      - 'playwright.accessibility.config.ts'
+      - 'tsconfig.e2e.json'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/evidencia-acessibilidade.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  axe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SEMANTIA_API_DIR: ${{ github.workspace }}/api
+      E2E_API_COMMIT: f1d07db796f2f4964f652669d0130a9e1ebe9eb9
+      SEMANTIA_E2E_PORT_OFFSET: '100'
+      ASR_URL: http://127.0.0.1:8100
+      TRANSCRIPT_ADAPTATION_ENABLED: 'true'
+      TRANSCRIPT_ADAPTATION_PROVIDER: fake
+    steps:
+      - name: Baixar a interface
+        uses: actions/checkout@v4
+        with:
+          path: web
+          persist-credentials: false
+      - name: Baixar a API pública na versão de referência
+        uses: actions/checkout@v4
+        with:
+          repository: Semantia-UniSenai/semantia-api
+          ref: ${{ env.E2E_API_COMMIT }}
+          path: api
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.22.0
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            web/pnpm-lock.yaml
+            api/pnpm-lock.yaml
+      - name: Instalar dependências e Chromium
+        run: |
+          pnpm --dir web install --frozen-lockfile
+          pnpm --dir api install --frozen-lockfile
+          pnpm --dir web exec playwright install --with-deps chromium
+      - name: Conferir referência e executar estados reais da interface
+        shell: bash
+        working-directory: web
+        run: |
+          set -euo pipefail
+          test "$(git -C ../api rev-parse HEAD)" = "$E2E_API_COMMIT"
+          node scripts/run-conference-e2e.mjs --suite e2e/accessibility.spec.ts --config playwright.accessibility.config.ts
+      - name: Publicar resumo e limites
+        if: always()
+        shell: bash
+        run: |
+          if test -f web/.e2e-results/accessibility/evidence/summary.md; then
+            cat web/.e2e-results/accessibility/evidence/summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'A avaliação axe não produziu relatório; confira a etapa anterior. Não há resultado de conformidade.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Guardar somente resultados sem credenciais
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidencia-axe-chromium-${{ github.sha }}
+          path: |
+            web/.e2e-results/accessibility/evidence/axe-results.json
+            web/.e2e-results/accessibility/evidence/summary.md
+          if-no-files-found: warn
+          retention-days: 30
