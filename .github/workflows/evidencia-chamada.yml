@@ -1,0 +1,151 @@
+name: Evidência da chamada (Chromium)
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - 'src/**'
+      - 'e2e/**'
+      - 'scripts/run-conference-e2e.mjs'
+      - 'playwright.config.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/evidencia-chamada.yml'
+  push:
+    branches: [dev, main]
+    paths:
+      - 'src/**'
+      - 'e2e/**'
+      - 'scripts/run-conference-e2e.mjs'
+      - 'playwright.config.ts'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/evidencia-chamada.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SEMANTIA_API_DIR: ${{ github.workspace }}/api
+      API_COMMIT: f1d07db796f2f4964f652669d0130a9e1ebe9eb9
+      TRANSCRIPT_ADAPTATION_ENABLED: 'false'
+      TRANSCRIPT_ADAPTATION_PROVIDER: disabled
+      PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ github.workspace }}/web/.e2e-results/resultado.json
+    steps:
+      - name: Baixar a interface
+        uses: actions/checkout@v4
+        with:
+          path: web
+          persist-credentials: false
+      - name: Baixar a API pública na versão de referência
+        uses: actions/checkout@v4
+        with:
+          repository: Semantia-UniSenai/semantia-api
+          ref: ${{ env.API_COMMIT }}
+          path: api
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.22.0
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            web/pnpm-lock.yaml
+            api/pnpm-lock.yaml
+      - name: Instalar dependências e Chromium
+        run: |
+          pnpm --dir web install --frozen-lockfile
+          pnpm --dir api install --frozen-lockfile
+          pnpm --dir web exec playwright install --with-deps chromium
+      - name: Registrar versões e condições da execução
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C api rev-parse HEAD)" = "$API_COMMIT"
+          mkdir -p web/.e2e-results
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { writeFileSync } from 'node:fs';
+          const revision = (directory) => execFileSync('git', ['-C', directory, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+          const evidence = {
+            startedAt: new Date().toISOString(),
+            webCommit: revision('web'),
+            apiCommit: revision('api'),
+            node: process.version,
+            pnpm: execFileSync('pnpm', ['--version'], { encoding: 'utf8' }).trim(),
+            scope: 'Chromium desktop e recuperação de autoplay; PostgreSQL 16, API NestJS, Socket.IO e LiveKit 1.9.10 reais em loopback',
+            authentication: 'Conta temporária criada pela API real e convidado admitido por convite; sessão do anfitrião instalada no navegador com o token emitido no cadastro',
+            media: 'Câmera e microfone sintéticos do navegador; transporte de mídia real pelo LiveKit',
+            ai: 'Adaptação desabilitada; reconhecimento de fala fora deste ensaio',
+            command: 'node scripts/run-conference-e2e.mjs --project=chromium-desktop --project=chromium-autoplay-blocked --reporter=list,json',
+          };
+          writeFileSync('web/.e2e-results/ambiente.json', `${JSON.stringify(evidence, null, 2)}\n`);
+          console.log(JSON.stringify(evidence, null, 2));
+          NODE
+      - name: Executar o fluxo da chamada com serviços descartáveis
+        working-directory: web
+        run: node scripts/run-conference-e2e.mjs --project=chromium-desktop --project=chromium-autoplay-blocked --reporter=list,json
+      - name: Publicar resumo da execução
+        if: always()
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+          const resultFile = 'web/.e2e-results/resultado.json';
+          const lines = [
+            '### Chamada com Chromium desktop e recuperação de autoplay',
+            '',
+            `API fixada em \`${process.env.API_COMMIT}\`.`,
+            'PostgreSQL, API, Socket.IO e LiveKit locais. Conta e convite temporários criados pela API real.',
+            'Câmera e microfone sintéticos. Inferência ASR e adaptação de texto fora deste ensaio.',
+            '',
+          ];
+          if (existsSync(resultFile)) {
+            const report = JSON.parse(readFileSync(resultFile, 'utf8'));
+            const { expected, unexpected, flaky, skipped, duration } = report.stats;
+            const summary = { passed: expected, failed: unexpected, flaky, skipped, durationMs: duration };
+            const cases = [];
+            function collectCases(suites, parents = []) {
+              for (const suite of suites) {
+                const names = [...parents, suite.title].filter(Boolean);
+                for (const spec of suite.specs ?? []) {
+                  for (const test of spec.tests) {
+                    cases.push({
+                      name: [...names, spec.title].join(' / '),
+                      project: test.projectName,
+                      status: test.status,
+                      durationMs: test.results.reduce((total, result) => total + result.duration, 0),
+                      attempts: test.results.length,
+                    });
+                  }
+                }
+                collectCases(suite.suites ?? [], names);
+              }
+            }
+            collectCases(report.suites);
+            writeFileSync('web/.e2e-results/casos.json', `${JSON.stringify({ summary, cases }, null, 2)}\n`);
+            console.log(JSON.stringify(summary, null, 2));
+            lines.push('```json', JSON.stringify(summary, null, 2), '```');
+          } else {
+            lines.push('Relatório ausente. Confira a etapa que falhou antes de concluir o ensaio.');
+          }
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join('\n')}\n`);
+          NODE
+      - name: Guardar versões e resultados dos casos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidencia-chamada-chromium-${{ github.sha }}
+          path: |
+            web/.e2e-results/ambiente.json
+            web/.e2e-results/casos.json
+          if-no-files-found: warn
+          retention-days: 30

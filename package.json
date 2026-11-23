@@ -34,6 +34,7 @@
     "@vitest/coverage-v8": "^4.1.9",
     "@vue/test-utils": "^2.4.11",
     "@vue/tsconfig": "^0.9.1",
+    "axe-core": "4.12.1",
     "happy-dom": "^20.10.6",
     "orval": "^8.19.0",
     "typescript": "~6.0.2",

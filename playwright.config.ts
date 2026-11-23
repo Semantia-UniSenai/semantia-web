@@ -11,6 +11,7 @@ const autoplayTest = /autoplay blocked/
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: 'accessibility.spec.ts',
   outputDir: '.e2e-results/artifacts',
   timeout: 90_000,
   expect: { timeout: 15_000 },

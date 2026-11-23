@@ -1449,6 +1449,8 @@ function trapPanelFocus(event: KeyboardEvent) {
   cursor: not-allowed;
 }
 .confirm-dialog-backdrop {
+  --meeting-text: #f4f7ff;
+  --meeting-muted: #9eabc4;
   position: fixed;
   inset: 0;
   z-index: 80;
@@ -1471,6 +1473,7 @@ function trapPanelFocus(event: KeyboardEvent) {
 .confirm-dialog__title {
   margin: 0 0 10px;
   font: 700 18px var(--display);
+  color: var(--meeting-text);
 }
 .confirm-dialog__body {
   margin: 0 0 22px;
@@ -2635,6 +2638,7 @@ function trapPanelFocus(event: KeyboardEvent) {
 .room--light .stage :deep(.captions__line--partial) { color: #2a5090; }
 .room--light .stage :deep(.captions__waiting) {
   color: #46506c;
+  opacity: 1;
   border-color: rgba(0, 0, 0, 0.1);
   background: rgba(0, 0, 0, 0.03);
 }
