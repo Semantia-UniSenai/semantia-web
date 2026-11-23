@@ -307,7 +307,7 @@ test('host and guest journey against disposable real services', async ({ page, c
     await page.getByRole('button', { name: 'Fechar teste de câmera e microfone' }).click()
 
     await page.getByRole('button', { name: /Iniciar transcrição/ }).click()
-    await expect(page.locator('.captions__line', { hasText: fixtureText }).first()).toBeVisible({ timeout: 45_000 })
+    await expect(page.locator('.captions__line', { hasText: 'Uma tabela tem linhas e colunas.' }).first()).toBeVisible({ timeout: 45_000 })
     await page.getByRole('button', { name: /Pausar transcrição/ }).click()
     await expect.poll(() => fixtureRequests).toBeGreaterThan(0)
     await scan(page, 'captions-literal', 'host', 'dark')

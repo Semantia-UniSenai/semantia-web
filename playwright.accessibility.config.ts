@@ -14,7 +14,7 @@ export default defineConfig({
     baseURL: process.env.E2E_WEB_URL ?? 'http://127.0.0.1:41780',
     viewport: { width: 1440, height: 900 },
     locale: 'pt-BR',
-    reducedMotion: 'reduce',
+    contextOptions: { reducedMotion: 'reduce' },
     trace: 'off',
     screenshot: 'off',
     video: 'off',
