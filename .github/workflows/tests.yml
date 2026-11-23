@@ -19,5 +19,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Testes unitários (Vitest)
         run: pnpm test
+      - name: Cobertura dos testes (Vitest)
+        run: pnpm exec vitest run --coverage --coverage.reporter=text-summary | tee coverage.txt
+      - name: Resumo da cobertura
+        run: |
+          echo '### Cobertura dos testes da interface' >> "$GITHUB_STEP_SUMMARY"
+          sed -n '/Coverage summary/,/=====$/p' coverage.txt | sed '1d;$d' >> "$GITHUB_STEP_SUMMARY" || true
       - name: Checagem de tipos
         run: pnpm typecheck
