@@ -1,0 +1,53 @@
+{
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "flaky": 0,
+    "skipped": 0,
+    "durationMs": 25407.509
+  },
+  "cases": [
+    {
+      "name": "conference-media.spec.ts / keeps context open without media capture when save fails and succeeds on retry",
+      "project": "chromium-desktop",
+      "status": "expected",
+      "durationMs": 1598,
+      "attempts": 1
+    },
+    {
+      "name": "conference-media.spec.ts / previews camera and audibly monitors microphone locally without publishing",
+      "project": "chromium-desktop",
+      "status": "expected",
+      "durationMs": 2439,
+      "attempts": 1
+    },
+    {
+      "name": "conference-media.spec.ts / stops a local camera preview when the canonical meeting end arrives",
+      "project": "chromium-desktop",
+      "status": "expected",
+      "durationMs": 1359,
+      "attempts": 1
+    },
+    {
+      "name": "conference-media.spec.ts / an old media token cannot recreate a room after canonical end",
+      "project": "chromium-desktop",
+      "status": "expected",
+      "durationMs": 12611,
+      "attempts": 1
+    },
+    {
+      "name": "conference-media.spec.ts / connects two admitted people with ephemeral audio and camera media",
+      "project": "chromium-desktop",
+      "status": "expected",
+      "durationMs": 3550,
+      "attempts": 1
+    },
+    {
+      "name": "conference-media.spec.ts / shows an explicit recovery action when autoplay blocked",
+      "project": "chromium-autoplay-blocked",
+      "status": "expected",
+      "durationMs": 1766,
+      "attempts": 1
+    }
+  ]
+}
